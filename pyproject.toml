@@ -26,6 +26,9 @@ dev = [
   "coverage[toml]",
   "ops[testing]",
   # Integration
+  "pytest",
+  "jubilant",
+  "distro"
 ]
 
 [tool.coverage.run]
