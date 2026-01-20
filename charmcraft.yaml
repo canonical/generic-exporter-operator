@@ -32,6 +32,9 @@ parts:
     build-snaps:
       - astral-uv
 
+assumes:
+  - juju >= 3.6
+
 config:
   options:
     snap-name:
