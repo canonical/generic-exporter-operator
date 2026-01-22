@@ -2,7 +2,7 @@
 # See LICENSE file for licensing details.
 
 type: charm
-name: generic-exporter
+name: generic-exporter-operator
 title: Generic Exporter
 summary: |
   A generic, configurable exporter charm that sets up an exporter from a snap and exports metrics and dashboard via COS relation.

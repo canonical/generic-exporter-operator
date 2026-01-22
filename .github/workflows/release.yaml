@@ -13,7 +13,6 @@ jobs:
     # The main branch of the central CI repo is capable of remote building.
     uses: canonical/observability/.github/workflows/charm-release.yaml@main
     secrets:
-      LAUNCHPAD_TOKEN: ${{ secrets.LAUNCHPAD_TOKEN }}
       CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
     with:
       provider: machine
