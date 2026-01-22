@@ -26,6 +26,17 @@ dev = [
   "coverage[toml]",
   "ops[testing]",
   # Integration
+  "pytest",
+  "jubilant",
+  "distro"
+]
+
+[tool.uv]
+required-environments = [
+    "platform_machine == 'arm64'",
+    "platform_machine == 'x86_64'",
+    "platform_machine == 'ppc64le'",
+    "platform_machine == 's390x'",
 ]
 
 [tool.coverage.run]
