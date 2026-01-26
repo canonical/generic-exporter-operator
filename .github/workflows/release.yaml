@@ -14,6 +14,7 @@ jobs:
     uses: canonical/observability/.github/workflows/charm-release.yaml@main
     secrets:
       CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
+      LAUNCHPAD_TOKEN: ${{ secrets.LAUNCHPAD_TOKEN }}
     with:
       provider: machine
       default-track: dev
