@@ -1,69 +1,121 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-# This file configures Charmcraft.
-# See https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/
 type: charm
 name: generic-exporter-operator
-title: Charm Template
-summary: A very short one-line summary of the charm.
+title: Generic Exporter
+summary: |
+  A generic, configurable exporter charm that sets up an exporter from a snap and exports metrics and dashboard via COS relation.
 description: |
-  A single sentence that says what the charm is, concisely and memorably.
+  The Generic Exporter installs an exporter snap and exports metrics and alert rules via relations.
 
-  A paragraph of one to three short sentences, that describe what the charm does.
+  The charm takes a snap from the store and installs it. It allows some config options for the snap
+  and makes the metrics available via the cos-agent interface.
+  The charm also supports configurable alert rules and a Grafana dashboard via charm resources.
 
-  A third paragraph that explains what need the charm meets.
-
-  Finally, a paragraph that describes whom the charm is useful for.
-
-# Documentation:
-# https://canonical-charmcraft.readthedocs-hosted.com/en/stable/howto/build-guides/select-platforms/
-base: ubuntu@22.04
+subordinate: true
 platforms:
-  amd64:
-  arm64:
+  ubuntu@22.04:amd64:
+  ubuntu@22.04:arm64:
+  ubuntu@22.04:ppc64el:
+  ubuntu@22.04:s390x:
 
+  ubuntu@24.04:amd64:
+  ubuntu@24.04:arm64:
+  ubuntu@24.04:ppc64el:
+  ubuntu@24.04:s390x:
 
 parts:
   charm:
-    plugin: charm
     source: .
+    plugin: uv
+    build-snaps:
+      - astral-uv
 
-# (Optional) Configuration options for the charm
-# This config section defines charm config options, and populates the Configure
-# tab on Charmhub.
-# More information on this section at:
-# https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/#config
-# General configuration documentation:
-# https://canonical-juju.readthedocs-hosted.com/en/latest/user/reference/configuration/#application-configuration
+assumes:
+  - juju >= 3.6
+
 config:
   options:
-    # An example config option to customise the log level of the workload
-    log-level:
-      description: |
-        Configures the log level of gunicorn.
-
-        Acceptable values are: "info", "debug", "warning", "error" and "critical"
-      default: "info"
+    snap-name:
       type: string
+      default: null
+      description: |
+        Name of the snap in the store.
+    snap-config:
+      type: string
+      default: null
+      description: |
+        A JSON formatted string of config options for the snap.
+        These configurations will be passed directly to the snap.
+    snap-config-secret:
+      type: secret
+      description: |
+        Secret URI pointing to a secret that contains the "config" key with
+        a JSON formatted string of sensitive config options for the snap.
+        The config will be merged with snap-config and passed directly to the snap.
+    snap-channel:
+      type: string
+      default: null
+      description: |
+        The channel from which to install the snap.
+        Cannot be used together with snap-revision.
+        If both are unset, the snap will be installed from the "latest/stable" channel.
+    snap-revision:
+      type: int
+      default: null
+      description: |
+        The revision of the snap to install.
+        Cannot be used together with snap-channel.
+    snap-classic:
+      type: boolean
+      default: false
+      description: |
+        If set to true, the snap will be set to classic confinement.
+        The default is to use strict confinement.
+    snap-plugs:
+      type: string
+      default: null
+      description: |
+        The comma-separated list of snap plugs to connect for the installed snap.
+        If not set, no interface will be connected.
+        Example: "network,network-bind", "block-device".
+    exporter-port:
+      type: int
+      default: null
+      description: Port that the exporter listens on.
+    metrics-path:
+      type: string
+      default: "metrics"
+      description: |
+        The path on which the metrics are exported. Without a leading slash.
+        Default is "metrics".
 
-
-# Your workload’s containers.
-# https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/#containers
-containers:
-  httpbin:
-    resource: some-container-image
-
-
-# This field populates the Resources tab on Charmhub.
-# https://canonical-charmcraft.readthedocs-hosted.com/en/stable/reference/files/charmcraft-yaml-file/#resources
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
-  some-container-image:
-    type: oci-image
-    description: OCI image for the 'some-container' container
-    # The upstream-source field is ignored by Charmcraft and Juju, but it can be
-    # useful to developers in identifying the source of the OCI image.  It is also
-    # used by the 'canonical/charming-actions' Github action for automated releases.
-    upstream-source: some-repo/some-image:some-tag
+  alerts:
+    type: file
+    filename: alerts.yaml
+    description: A file containing Prometheus alert rules in YAML format.
+
+actions:
+  dump-alerts:
+    description: |
+      Dump the currently configured alert rules file to the standard output.
+      The action will flush the file that is stored by the charm and provide a path to it.
+    additionalProperties: false
+
+provides:
+  cos-agent:
+    description: |
+      `cos-agent` provides metrics and dashboards to the consuming charm.
+    interface: cos_agent
+    scope: container
+    optional: true
+
+requires:
+  juju-info:
+    description: |
+      `juju-info` provides basic compatibility with all charms.
+    interface: juju-info
+    scope: container
+    limit: 1
