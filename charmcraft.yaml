@@ -13,6 +13,16 @@ description: |
   and makes the metrics available via the cos-agent interface.
   The charm also supports configurable alert rules and a Grafana dashboard via charm resources.
 
+links:
+  documentation: https://discourse.charmhub.io/t/generic-exporter-documentation/19645
+  issues:
+  - https://github.com/canonical/generic-exporter-operator/issues
+  source:
+  - https://github.com/canonical/generic-exporter-operator
+  website:
+  - https://charmhub.io/generic-exporter-operator
+  - https://github.com/canonical/generic-exporter-operator
+
 subordinate: true
 platforms:
   ubuntu@22.04:amd64:
