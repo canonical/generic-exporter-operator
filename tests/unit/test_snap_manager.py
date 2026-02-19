@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd.
+# Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 from unittest.mock import MagicMock, patch
@@ -26,6 +26,12 @@ def mock_snap_remove():
     """Mock the snap.remove function."""
     with patch("utils.snap.remove") as mock_remove:
         yield mock_remove
+
+@pytest.fixture
+def mock_ssdlc_logger():
+    """Mock the SSDLC logger."""
+    with patch("snap_manager.log_ssdlc_system_event") as mock_ssdlc_logger:
+        yield mock_ssdlc_logger
 
 def test_snap_version_installed(mock_snap_cache):
     """Test retrieving snap version when installed."""
@@ -288,7 +294,7 @@ def test_check_empty_services(mock_snap_cache):
 
     assert result is True
 
-def test_enable_and_start(mock_snap_cache):
+def test_enable_and_start(mock_snap_cache, mock_ssdlc_logger):
     """Test enabling and starting snap services."""
     mock_snap = MagicMock()
     mock_snap_cache.return_value.__getitem__.return_value = mock_snap
@@ -297,8 +303,9 @@ def test_enable_and_start(mock_snap_cache):
     client.enable_and_start()
 
     mock_snap.start.assert_called_once_with(enable=True)
+    mock_ssdlc_logger.assert_called_once()
 
-def test_enable_and_start_failure(mock_snap_cache):
+def test_enable_and_start_failure(mock_snap_cache, mock_ssdlc_logger):
     """Test enabling and starting snap services failure."""
     mock_snap = MagicMock()
     mock_snap.start.side_effect = snap.SnapError("Start failed")
@@ -308,9 +315,10 @@ def test_enable_and_start_failure(mock_snap_cache):
     resutl = client.enable_and_start()
 
     mock_snap.start.assert_called_once_with(enable=True)
+    mock_ssdlc_logger.assert_not_called()
     assert resutl is False
 
-def test_disable_and_stop(mock_snap_cache):
+def test_disable_and_stop(mock_snap_cache, mock_ssdlc_logger):
     """Test disabling and stopping snap services."""
     mock_snap = MagicMock()
     mock_snap_cache.return_value.__getitem__.return_value = mock_snap
@@ -319,8 +327,9 @@ def test_disable_and_stop(mock_snap_cache):
     client.disable_and_stop()
 
     mock_snap.stop.assert_called_once_with(disable=True)
+    mock_ssdlc_logger.assert_called_once()
 
-def test_disable_and_stop_failure(mock_snap_cache):
+def test_disable_and_stop_failure(mock_snap_cache, mock_ssdlc_logger):
     """Test disabling and stopping snap services failure."""
     mock_snap = MagicMock()
     mock_snap.stop.side_effect = snap.SnapError("Stop failed")
@@ -330,6 +339,7 @@ def test_disable_and_stop_failure(mock_snap_cache):
     result = client.disable_and_stop()
 
     mock_snap.stop.assert_called_once_with(disable=True)
+    mock_ssdlc_logger.assert_not_called()
     assert result is False
 
 def test_ensure_success(mock_snap_cache):
@@ -354,4 +364,28 @@ def test_ensure_failure(mock_snap_cache):
     client = SnapClient("test-snap")
     result = client.ensure(1, classic=True)
 
+    assert result is False
+
+def test_restart(mock_snap_cache, mock_ssdlc_logger):
+    """Test restarting snap services."""
+    mock_snap = MagicMock()
+    mock_snap_cache.return_value.__getitem__.return_value = mock_snap
+
+    client = SnapClient("test-snap")
+    result = client.restart()
+    mock_snap.restart.assert_called_once_with(reload=True)
+    mock_ssdlc_logger.assert_called_once()
+    assert result is True
+
+def test_restart_failure(mock_snap_cache, mock_ssdlc_logger):
+    """Test restarting snap services failure."""
+    mock_snap = MagicMock()
+    mock_snap.restart.side_effect = snap.SnapError("Restart failed")
+    mock_snap_cache.return_value.__getitem__.return_value = mock_snap
+
+    client = SnapClient("test-snap")
+    result = client.restart()
+
+    mock_snap.restart.assert_called_once_with(reload=True)
+    assert mock_ssdlc_logger.call_count == 2
     assert result is False
