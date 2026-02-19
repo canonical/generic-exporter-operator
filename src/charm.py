@@ -311,10 +311,13 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         if not config.exporter_port:
             return None
 
+        job_name = f"{self.app.name}_{self.unit.name.split('/')[1]}_{config.snap_name}_metrics"
+
         return COSAgentProvider(
             self,
             scrape_configs=[
                 {
+                    "job_name": job_name,
                     "metrics_path": f"/{config.metrics_path}",
                     "static_configs": [
                         {
