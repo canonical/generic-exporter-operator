@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd.
+# Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 """The snap management for the Generic Exporter Operator Charm."""
@@ -8,6 +8,8 @@ from typing import List, Optional, Union
 
 from charms.operator_libs_linux.v2 import snap
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_fixed
+
+from ssdlc import SSDLCSysEvent, log_ssdlc_system_event
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ class SnapClient:
         """Set the configuration for the snap exporter."""
         try:
             self.snap_client.set(config, typed=True)
-            self.snap_client.restart()
+            self.restart()
             logger.info("Set config for %s: %s", self.name, config)
             return True
         except snap.SnapError as err:
@@ -80,7 +82,7 @@ class SnapClient:
         try:
             for key in keys:
                 self.snap_client.unset(key)
-            self.snap_client.restart()
+            self.restart()
             logger.info("Unset config keys %s for %s", keys, self.name)
             return True
         except snap.SnapError as err:
@@ -122,6 +124,7 @@ class SnapClient:
         try:
             self.snap_client.start(enable=True)
             logger.info("Enabled and started services for %s", self.name)
+            log_ssdlc_system_event(SSDLCSysEvent.STARTUP, self.name)
             return True
         except snap.SnapError as err:
             logger.error("Failed to enable and start services for %s: %s", self.name, err)
@@ -132,6 +135,7 @@ class SnapClient:
         try:
             self.snap_client.stop(disable=True)
             logger.info("Disabled and stopped services for %s", self.name)
+            log_ssdlc_system_event(SSDLCSysEvent.SHUTDOWN, self.name)
             return True
         except snap.SnapError as err:
             logger.error("Failed to disable and stop services for %s: %s", self.name, err)
@@ -153,4 +157,16 @@ class SnapClient:
             return True
         except snap.SnapError as err:
             logger.error("Failed to configure %s: %s", self.name, err)
+        return False
+
+    def restart(self) -> bool:
+        """Restart the snap services."""
+        try:
+            log_ssdlc_system_event(SSDLCSysEvent.RESTART, self.name)
+            self.snap_client.restart(reload=True)
+            logger.info("Restarted services for %s", self.name)
+            return True
+        except snap.SnapError as err:
+            logger.error("Failed to restart services for %s: %s", self.name, err)
+            log_ssdlc_system_event(SSDLCSysEvent.CRASH, self.name, msg=str(err))
         return False
