@@ -28,6 +28,7 @@ def test_check_metrics_endpoint_success():
         result = check_metrics_endpoint(url)
         assert result is True
 
+
 def test_check_metrics_endpoint_failure():
     """Test failed metrics endpoint check."""
     url = "http://example.com/metrics"
@@ -38,6 +39,7 @@ def test_check_metrics_endpoint_failure():
 
         result = check_metrics_endpoint(url)
         assert result is False
+
 
 def test_check_metrics_endpoint_exception():
     """Test metrics endpoint check with exception."""
@@ -56,9 +58,7 @@ def test_get_snap_info_success_with_channel():
     mock_snap_client = MagicMock()
     mock_snap_client.get_snap_information.return_value = {
         "confinement": "strict",
-        "channels": {
-            snap_channel: {"revision": str(expected_revision)}
-        }
+        "channels": {snap_channel: {"revision": str(expected_revision)}},
     }
 
     with patch("utils.snap.SnapClient", return_value=mock_snap_client):
@@ -68,14 +68,13 @@ def test_get_snap_info_success_with_channel():
         assert info.revision == expected_revision
         assert info.confinement == Confinement.STRICT
 
+
 def test_get_snap_info_success_without_channel():
     """Test successful retrieval of snap info without channel."""
     snap_name = "test-snap"
 
     mock_snap_client = MagicMock()
-    mock_snap_client.get_snap_information.return_value = {
-        "confinement": "classic"
-    }
+    mock_snap_client.get_snap_information.return_value = {"confinement": "classic"}
 
     with patch("utils.snap.SnapClient", return_value=mock_snap_client):
         info = get_snap_info(snap_name)
@@ -83,6 +82,7 @@ def test_get_snap_info_success_without_channel():
         assert info.name == snap_name
         assert info.revision is None
         assert info.confinement == Confinement.CLASSIC
+
 
 def test_get_snap_info_no_revision():
     """Test retrieval of snap revision when no revision is found."""
@@ -92,9 +92,7 @@ def test_get_snap_info_no_revision():
     mock_snap_client = MagicMock()
     mock_snap_client.get_snap_information.return_value = {
         "confinement": "classic",
-        "channels": {
-            snap_channel: {}
-        }
+        "channels": {snap_channel: {}},
     }
 
     with patch("utils.snap.SnapClient", return_value=mock_snap_client):
@@ -103,6 +101,7 @@ def test_get_snap_info_no_revision():
         assert info.name == snap_name
         assert info.revision is None
         assert info.confinement == Confinement.CLASSIC
+
 
 def test_get_snap_info_api_error():
     """Test retrieval of snap revision when SnapAPIError is raised."""
@@ -116,15 +115,14 @@ def test_get_snap_info_api_error():
         info = get_snap_info(snap_name, snap_channel)
         assert info is None
 
+
 def test_get_snap_info_invalid_channels():
     """Test retrieval of snap revision when channels data is invalid."""
     snap_name = "test-snap"
     snap_channel = "latest/stable"
 
     mock_snap_client = MagicMock()
-    mock_snap_client.get_snap_information.return_value = {
-        "channels": "invalid_data"
-    }
+    mock_snap_client.get_snap_information.return_value = {"channels": "invalid_data"}
 
     with patch("utils.snap.SnapClient", return_value=mock_snap_client):
         info = get_snap_info(snap_name, snap_channel)
@@ -132,6 +130,7 @@ def test_get_snap_info_invalid_channels():
         assert info.revision is None
         assert info.name == snap_name
         assert info.confinement == Confinement.STRICT
+
 
 def test_get_snap_info_invalid_channel_info():
     """Test retrieval of snap revision when channel info data is invalid."""
@@ -141,9 +140,7 @@ def test_get_snap_info_invalid_channel_info():
     mock_snap_client = MagicMock()
     mock_snap_client.get_snap_information.return_value = {
         "confinement": "classic",
-        "channels": {
-            snap_channel: "invalid_data"
-        }
+        "channels": {snap_channel: "invalid_data"},
     }
 
     with patch("utils.snap.SnapClient", return_value=mock_snap_client):

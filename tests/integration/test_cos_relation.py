@@ -35,14 +35,17 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         charm,
         app=app_name,
         base=base,
-        config={"snap-name": SMARTCTL_SNAP_NAME, "exporter-port": SMARTCTL_EXPORTER_PORT},
+        config={
+            "snap-name": SMARTCTL_SNAP_NAME,
+            "exporter-port": SMARTCTL_EXPORTER_PORT,
+        },
     )
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
     juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
     juju.integrate(
         f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}",
-        f"{GRAFANA_AGENT_APP}:{JUJU_INFO_ENDPOINT}"
+        f"{GRAFANA_AGENT_APP}:{JUJU_INFO_ENDPOINT}",
     )
 
     juju.wait(
@@ -56,6 +59,7 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         timeout=TIMEOUT,
     )
 
+
 def test_cos_relation(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm enters active state when Grafana Agent is related."""
     juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{GRAFANA_AGENT_APP}:{COS_ENDPOINT}")
@@ -66,10 +70,16 @@ def test_cos_relation(juju: jubilant.Juju, app_name: str) -> None:
         timeout=TIMEOUT,
     )
 
+
 def test_relation_data(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the relation data is set correctly."""
     with tempfile.NamedTemporaryFile(
-        delete=False, mode='w', newline='', encoding='utf-8', dir=TEMP_DIR, suffix='.yaml'
+        delete=False,
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        dir=TEMP_DIR,
+        suffix=".yaml",
     ) as alerts_file:
         alerts_file.write(VALID_ALERTS_YAML)
         alerts_file_path = alerts_file.name
@@ -77,8 +87,8 @@ def test_relation_data(juju: jubilant.Juju, app_name: str) -> None:
     juju.cli("attach-resource", app_name, f"alerts={alerts_file_path}")
     juju.wait(
         lambda status: (
-            jubilant.all_active(status, app_name, UBUNTU_APP_NAME) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_active(status, app_name, UBUNTU_APP_NAME)
+            and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -88,15 +98,14 @@ def test_relation_data(juju: jubilant.Juju, app_name: str) -> None:
     assert_scrape_job(juju, app_name, target, SMARTCTL_EXPORTER_METRICS_PATH, {"instance"})
     assert_alerts_rules(juju, app_name, {"ExampleAlert"})
 
+
 def test_metrics_endpoint(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the metrics endpoint is reachable and returns valid metrics."""
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
     assert_metrics_endpoint(
-        juju,
-        principal_unit,
-        SMARTCTL_EXPORTER_PORT,
-        SMARTCTL_EXPORTER_METRICS_PATH
+        juju, principal_unit, SMARTCTL_EXPORTER_PORT, SMARTCTL_EXPORTER_METRICS_PATH
     )
+
 
 def test_config_exporter(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm handles configuration changes and update COS relation data."""
@@ -106,7 +115,7 @@ def test_config_exporter(juju: jubilant.Juju, app_name: str) -> None:
             "snap-name": "smartctl-exporter",
             "exporter-port": 9644,
             "metrics-path": "custom-metrics",
-        }
+        },
     )
 
     # Will block as the endpoint is unreachable
@@ -118,6 +127,7 @@ def test_config_exporter(juju: jubilant.Juju, app_name: str) -> None:
 
     target = "localhost:9644"
     assert_scrape_job(juju, app_name, target, "/custom-metrics", {"instance"})
+
 
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""

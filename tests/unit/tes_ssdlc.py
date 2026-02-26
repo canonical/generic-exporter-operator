@@ -14,6 +14,7 @@ def mock_ssdlc_logger():
     with mock.patch("ssdlc.logger") as mock_ssdlc_logger:
         yield mock_ssdlc_logger
 
+
 @pytest.fixture()
 def mock_ssdlc_datetime():
     with mock.patch("ssdlc.datetime") as mock_ssdlc_datetime:
@@ -40,6 +41,7 @@ def test_log_ssdlc_system_event_with_service_name(self, mock_ssdlc_datetime, moc
     self.assertEqual(logged_data["level"], "WARN")
     self.assertIn("generic-exporter start service", logged_data["description"])
 
+
 @pytest.mark.parametrize(
     "event,service_name,msg",
     [
@@ -51,7 +53,7 @@ def test_log_ssdlc_system_event_with_service_name(self, mock_ssdlc_datetime, moc
             "other-exporter",
             "Connection timeout",
         ),
-    ]
+    ],
 )
 def test_log_ssdlc_system_event_all_events(
     self, event, service_name, msg, mock_ssdlc_datetime, mock_ssdlc_logger
@@ -77,10 +79,9 @@ def test_log_ssdlc_system_event_all_events(
     if msg:
         self.assertIn(msg, logged_data["description"])
 
+
 def test_log_ssdlc_system_event_with_additional_message(
-    self,
-    mock_ssdlc_datetime,
-    mock_ssdlc_logger
+    self, mock_ssdlc_datetime, mock_ssdlc_logger
 ):
     """Test logging with additional message."""
     # Setup mock datetime
@@ -95,6 +96,7 @@ def test_log_ssdlc_system_event_with_additional_message(
     # Verify the additional message is included
     logged_data = mock_ssdlc_logger.warning.call_args[0][0]
     self.assertIn(additional_msg, logged_data["description"])
+
 
 def test_log_ssdlc_system_event_datetime_format(self, mock_ssdlc_datetime, mock_ssdlc_logger):
     """Test that datetime is in ISO 8601 format with timezone."""

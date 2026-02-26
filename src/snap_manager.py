@@ -13,13 +13,15 @@ from ssdlc import SSDLCSysEvent, log_ssdlc_system_event
 
 logger = logging.getLogger(__name__)
 
+
 class SnapClient:
     """A class representing a snap exporter service."""
 
     name: str
 
     def __init__(
-        self, name: str,
+        self,
+        name: str,
     ):
         self.name = name
 
@@ -48,12 +50,7 @@ class SnapClient:
             self.snap_client.hold()
             return self.snap_client.present is True
         except snap.SnapError as err:
-            logger.error(
-                "Failed to install %s from revision: %s %s",
-                self.name,
-                revision,
-                err
-            )
+            logger.error("Failed to install %s from revision: %s %s", self.name, revision, err)
         return False
 
     def remove(self) -> bool:
@@ -113,7 +110,7 @@ class SnapClient:
         stop=stop_after_attempt(5),
         wait=wait_fixed(2),
         retry=retry_if_result(lambda x: x is False),
-        retry_error_callback=(lambda state: state.outcome.result()), # type: ignore
+        retry_error_callback=(lambda state: state.outcome.result()),  # type: ignore
     )
     def check(self) -> bool:
         """Check if the snap services are active."""
@@ -149,11 +146,7 @@ class SnapClient:
                 revision=str(revision),
                 classic=classic,
             )
-            logger.info(
-                "Configured %s to revision: %s",
-                self.name,
-                revision
-            )
+            logger.info("Configured %s to revision: %s", self.name, revision)
             return True
         except snap.SnapError as err:
             logger.error("Failed to configure %s: %s", self.name, err)

@@ -23,10 +23,12 @@ def pytest_addoption(parser) -> None:
         help="keep temporarily-created models",
     )
 
+
 @pytest.fixture(scope="module")
 def base() -> str:
     """Determine the base for the charm tests."""
     return f"{distro.id()}@{distro.version()}"
+
 
 @pytest.fixture(scope="module")
 def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]:
@@ -42,6 +44,7 @@ def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]
             log = juju.debug_log(limit=300)
             print(log, end="")
 
+
 @pytest.fixture(scope="module")
 def charm(base: str) -> Path:
     """Path to the packed charm."""
@@ -51,6 +54,7 @@ def charm(base: str) -> Path:
         )
 
     return path
+
 
 @pytest.fixture(scope="module")
 def app_name() -> str:

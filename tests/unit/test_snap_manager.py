@@ -15,11 +15,13 @@ def mock_snap_cache():
     with patch("utils.snap.SnapCache") as mock_cache:
         yield mock_cache
 
+
 @pytest.fixture
 def mock_snap_add():
     """Mock the snap.add function."""
     with patch("utils.snap.add") as mock_add:
         yield mock_add
+
 
 @pytest.fixture
 def mock_snap_remove():
@@ -27,11 +29,13 @@ def mock_snap_remove():
     with patch("utils.snap.remove") as mock_remove:
         yield mock_remove
 
+
 @pytest.fixture
 def mock_ssdlc_logger():
     """Mock the SSDLC logger."""
     with patch("snap_manager.log_ssdlc_system_event") as mock_ssdlc_logger:
         yield mock_ssdlc_logger
+
 
 def test_snap_version_installed(mock_snap_cache):
     """Test retrieving snap version when installed."""
@@ -45,6 +49,7 @@ def test_snap_version_installed(mock_snap_cache):
 
     assert version == "1.2.3"
 
+
 def test_snap_version_not_installed(mock_snap_cache):
     """Test retrieving snap version when not installed."""
     mock_snap = MagicMock()
@@ -55,6 +60,7 @@ def test_snap_version_not_installed(mock_snap_cache):
     version = client.snap_version
 
     assert version is None
+
 
 def test_install_success(mock_snap_cache, mock_snap_add):
     """Test successful snap installation."""
@@ -68,6 +74,7 @@ def test_install_success(mock_snap_cache, mock_snap_add):
     mock_snap_add.assert_called_once_with("test-snap", revision="1", classic=False)
     assert result is True
 
+
 def test_install_failure_snap_not_present(mock_snap_cache, mock_snap_add):
     """Test snap installation failure when snap is not present after installation."""
     mock_snap = MagicMock()
@@ -79,6 +86,7 @@ def test_install_failure_snap_not_present(mock_snap_cache, mock_snap_add):
 
     assert result is False
 
+
 def test_install_failure_snap_error(mock_snap_cache, mock_snap_add):
     """Test snap installation failure with SnapError exception."""
     mock_snap_add.side_effect = snap.SnapError("Installation failed")
@@ -88,6 +96,7 @@ def test_install_failure_snap_error(mock_snap_cache, mock_snap_add):
     result = client.install(1, classic=False)
 
     assert result is False
+
 
 def test_remove_success(mock_snap_cache, mock_snap_remove):
     """Test successful snap removal."""
@@ -101,6 +110,7 @@ def test_remove_success(mock_snap_cache, mock_snap_remove):
     mock_snap_remove.assert_called_once_with("test-snap")
     assert result is True
 
+
 def test_remove_failure_snap_still_present(mock_snap_cache, mock_snap_remove):
     """Test snap removal failure when snap is still present after removal."""
     mock_snap = MagicMock()
@@ -112,6 +122,7 @@ def test_remove_failure_snap_still_present(mock_snap_cache, mock_snap_remove):
 
     assert result is False
 
+
 def test_remove_failure_snap_error(mock_snap_cache, mock_snap_remove):
     """Test snap removal failure with SnapError exception."""
     mock_snap_remove.side_effect = snap.SnapError("Removal failed")
@@ -121,6 +132,7 @@ def test_remove_failure_snap_error(mock_snap_cache, mock_snap_remove):
     result = client.remove()
 
     assert result is False
+
 
 def test_set_success(mock_snap_cache):
     """Test successful snap configuration setting."""
@@ -134,6 +146,7 @@ def test_set_success(mock_snap_cache):
     mock_snap.set.assert_called_once_with(config, typed=True)
     assert result is True
 
+
 def test_set_failure(mock_snap_cache):
     """Test snap configuration setting failure."""
     mock_snap = MagicMock()
@@ -144,6 +157,7 @@ def test_set_failure(mock_snap_cache):
     result = client.set({"key": "value"})
 
     assert result is False
+
 
 def test_unset_success(mock_snap_cache):
     """Test successful snap unset config."""
@@ -158,6 +172,7 @@ def test_unset_success(mock_snap_cache):
     mock_snap.unset.assert_any_call("other-key")
     assert result is True
 
+
 def test_unset_failure(mock_snap_cache):
     """Test snap unset config failure."""
     mock_snap = MagicMock()
@@ -168,6 +183,7 @@ def test_unset_failure(mock_snap_cache):
     result = client.unset(["key"])
 
     assert result is False
+
 
 def test_get_config_success(mock_snap_cache):
     """Test successful retrieval of snap configuration."""
@@ -181,6 +197,7 @@ def test_get_config_success(mock_snap_cache):
     mock_snap.get.assert_called_once_with(None, typed=True)
     assert config == {"key": "value", "port": 9090}
 
+
 def test_get_config_failure(mock_snap_cache):
     """Test snap configuration retrieval failure."""
     mock_snap = MagicMock()
@@ -192,6 +209,7 @@ def test_get_config_failure(mock_snap_cache):
 
     assert config == {}
 
+
 def test_connect_success_single_plug(mock_snap_cache):
     """Test successful connection of a single plug."""
     mock_snap = MagicMock()
@@ -202,6 +220,7 @@ def test_connect_success_single_plug(mock_snap_cache):
 
     mock_snap.connect.assert_called_once_with("network")
     assert result is True
+
 
 def test_connect_success_multiple_plugs(mock_snap_cache):
     """Test successful connection of multiple plugs."""
@@ -217,6 +236,7 @@ def test_connect_success_multiple_plugs(mock_snap_cache):
     mock_snap.connect.assert_any_call("removable-media")
     assert result is True
 
+
 def test_connect_failure_first_plug(mock_snap_cache):
     """Test plug connection failure on the first plug."""
     mock_snap = MagicMock()
@@ -229,6 +249,7 @@ def test_connect_failure_first_plug(mock_snap_cache):
     mock_snap.connect.assert_called_once_with("network")
     assert result is False
 
+
 def test_connect_failure_second_plug(mock_snap_cache):
     """Test plug connection failure on the second plug."""
     mock_snap = MagicMock()
@@ -240,6 +261,7 @@ def test_connect_failure_second_plug(mock_snap_cache):
 
     assert mock_snap.connect.call_count == 2
     assert result is False
+
 
 def test_check_all_services_active(mock_snap_cache):
     """Test check method when all services are active."""
@@ -255,6 +277,7 @@ def test_check_all_services_active(mock_snap_cache):
 
     assert result is True
 
+
 def test_check_some_services_inactive(mock_snap_cache):
     """Test check method when some services are inactive."""
     mock_snap = MagicMock()
@@ -268,6 +291,7 @@ def test_check_some_services_inactive(mock_snap_cache):
     result = client.check()
 
     assert result is False
+
 
 def test_check_no_active_key(mock_snap_cache):
     """Test check method when services don't have active key."""
@@ -283,6 +307,7 @@ def test_check_no_active_key(mock_snap_cache):
 
     assert result is False
 
+
 def test_check_empty_services(mock_snap_cache):
     """Test check method with empty services dictionary."""
     mock_snap = MagicMock()
@@ -293,6 +318,7 @@ def test_check_empty_services(mock_snap_cache):
     result = client.check()
 
     assert result is True
+
 
 def test_enable_and_start(mock_snap_cache, mock_ssdlc_logger):
     """Test enabling and starting snap services."""
@@ -305,6 +331,7 @@ def test_enable_and_start(mock_snap_cache, mock_ssdlc_logger):
     mock_snap.start.assert_called_once_with(enable=True)
     mock_ssdlc_logger.assert_called_once()
 
+
 def test_enable_and_start_failure(mock_snap_cache, mock_ssdlc_logger):
     """Test enabling and starting snap services failure."""
     mock_snap = MagicMock()
@@ -312,11 +339,12 @@ def test_enable_and_start_failure(mock_snap_cache, mock_ssdlc_logger):
     mock_snap_cache.return_value.__getitem__.return_value = mock_snap
 
     client = SnapClient("test-snap")
-    resutl = client.enable_and_start()
+    result = client.enable_and_start()
 
     mock_snap.start.assert_called_once_with(enable=True)
     mock_ssdlc_logger.assert_not_called()
-    assert resutl is False
+    assert result is False
+
 
 def test_disable_and_stop(mock_snap_cache, mock_ssdlc_logger):
     """Test disabling and stopping snap services."""
@@ -328,6 +356,7 @@ def test_disable_and_stop(mock_snap_cache, mock_ssdlc_logger):
 
     mock_snap.stop.assert_called_once_with(disable=True)
     mock_ssdlc_logger.assert_called_once()
+
 
 def test_disable_and_stop_failure(mock_snap_cache, mock_ssdlc_logger):
     """Test disabling and stopping snap services failure."""
@@ -342,6 +371,7 @@ def test_disable_and_stop_failure(mock_snap_cache, mock_ssdlc_logger):
     mock_ssdlc_logger.assert_not_called()
     assert result is False
 
+
 def test_ensure_success(mock_snap_cache):
     """Test successful snap ensure operation."""
     mock_snap = MagicMock()
@@ -350,10 +380,9 @@ def test_ensure_success(mock_snap_cache):
     client = SnapClient("test-snap")
     result = client.ensure(1, classic=True)
 
-    mock_snap.ensure.assert_called_once_with(
-        snap.SnapState.Present, revision="1", classic=True
-    )
+    mock_snap.ensure.assert_called_once_with(snap.SnapState.Present, revision="1", classic=True)
     assert result is True
+
 
 def test_ensure_failure(mock_snap_cache):
     """Test snap ensure operation failure."""
@@ -366,6 +395,7 @@ def test_ensure_failure(mock_snap_cache):
 
     assert result is False
 
+
 def test_restart(mock_snap_cache, mock_ssdlc_logger):
     """Test restarting snap services."""
     mock_snap = MagicMock()
@@ -376,6 +406,7 @@ def test_restart(mock_snap_cache, mock_ssdlc_logger):
     mock_snap.restart.assert_called_once_with(reload=True)
     mock_ssdlc_logger.assert_called_once()
     assert result is True
+
 
 def test_restart_failure(mock_snap_cache, mock_ssdlc_logger):
     """Test restarting snap services failure."""
