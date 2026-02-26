@@ -86,7 +86,7 @@ max-complexity = 10
 convention = "google"
 
 [tool.codespell]
-skip = "build,lib,venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"
+skip = "lib,.venv,.tox,.git,.mypy_cache,.ruff_cache,.coverage,uv.lock"
 
 [tool.pyright]
 include = ["src", "lib"]
