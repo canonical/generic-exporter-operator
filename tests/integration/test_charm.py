@@ -27,6 +27,7 @@ from helpers import (
 
 logger = logging.getLogger(__name__)
 
+
 def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> None:
     """Test that the charm deploys and relates correctly."""
     juju.deploy(
@@ -51,6 +52,7 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         timeout=TIMEOUT,
     )
 
+
 def test_config_basic(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm handles configuration changes."""
     juju.config(
@@ -58,7 +60,7 @@ def test_config_basic(juju: jubilant.Juju, app_name: str) -> None:
         {
             "snap-name": SMARTCTL_SNAP_NAME,
             "exporter-port": SMARTCTL_EXPORTER_PORT,
-        }
+        },
     )
 
     juju.wait(
@@ -66,6 +68,7 @@ def test_config_basic(juju: jubilant.Juju, app_name: str) -> None:
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
+
 
 @pytest.mark.parametrize(
     "config_changes",
@@ -97,19 +100,13 @@ def test_config_snap_source(juju: jubilant.Juju, app_name: str, config_changes: 
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        f"snap info {SMARTCTL_SNAP_NAME}",
-        unit=principal_unit
-    )
+    task = juju.exec(f"snap info {SMARTCTL_SNAP_NAME}", unit=principal_unit)
     snap_info = yaml.safe_load(task.stdout.strip())
     installed_revision = get_snap_revision(snap_info)
     assert installed_revision is not None, "Could not determine installed snap revision"
 
     if "snap-channel" in config_changes:
-        expected_revision = get_snap_revision_by_channel(
-            snap_info,
-            config_changes["snap-channel"]
-        )
+        expected_revision = get_snap_revision_by_channel(snap_info, config_changes["snap-channel"])
         assert installed_revision == expected_revision, (
             f"Expected snap revision {expected_revision} for channel "
             f"{config_changes['snap-channel']}, but found {installed_revision}"
@@ -120,24 +117,17 @@ def test_config_snap_source(juju: jubilant.Juju, app_name: str, config_changes: 
             f"Expected snap revision {expected_revision}, but found {installed_revision}"
         )
 
-    juju.config(
-        app_name,
-        reset=list(config_changes.keys())
-    )
+    juju.config(app_name, reset=list(config_changes.keys()))
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
 
+
 def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm handles configuration changes."""
-    secret_id = juju.add_secret(
-        "test-secret",
-        {
-            "config": json.dumps({"log": {"level": "debug"}})
-        }
-    )
+    secret_id = juju.add_secret("test-secret", {"config": json.dumps({"log": {"level": "debug"}})})
     juju.grant_secret(secret_id, app_name)
 
     juju.config(
@@ -146,7 +136,7 @@ def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
             "snap-config": json.dumps({"web": {"listen-address": ":10200"}}),
             "snap-config-secret": secret_id,
             "exporter-port": 10200,
-        }
+        },
     )
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
@@ -155,10 +145,7 @@ def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        f"snap get {SMARTCTL_SNAP_NAME}",
-        unit=principal_unit
-    )
+    task = juju.exec(f"snap get {SMARTCTL_SNAP_NAME}", unit=principal_unit)
     snap_config = json.loads(task.stdout.strip())
     assert snap_config.get("web", {}).get("listen-address") == ":10200", (
         "Expected snap configuration 'web.listen-address' to be set to ':10200'"
@@ -169,10 +156,8 @@ def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
 
     juju.config(
         app_name,
-        {
-            "exporter-port": SMARTCTL_EXPORTER_PORT
-        },
-        reset=["snap-config", "snap-config-secret"]
+        {"exporter-port": SMARTCTL_EXPORTER_PORT},
+        reset=["snap-config", "snap-config-secret"],
     )
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
@@ -180,28 +165,26 @@ def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
         timeout=TIMEOUT,
     )
 
+
 @pytest.mark.parametrize(
     "config_changes,expected_message",
     [
         (
             {"snap-channel": "invalid/channel"},
-            "Could not determine revision for snap smartctl-exporter on channel invalid/channel."
+            "Could not determine revision for snap smartctl-exporter on channel invalid/channel.",
         ),
         (
             {"snap-revision": 999999},
-            "Failed to configure snap: smartctl-exporter. See juju debug-log for details."
+            "Failed to configure snap: smartctl-exporter. See juju debug-log for details.",
         ),
         (
             {"snap-channel": "latest/stable", "snap-revision": 76},
-            "Invalid configuration: snap-channel and snap-revision cannot both be set"
+            "Invalid configuration: snap-channel and snap-revision cannot both be set",
         ),
     ],
 )
 def test_config_invalid(
-    juju: jubilant.Juju,
-    app_name: str,
-    config_changes: dict,
-    expected_message: str
+    juju: jubilant.Juju, app_name: str, config_changes: dict, expected_message: str
 ) -> None:
     """Test that the charm handles invalid configuration."""
     juju.config(
@@ -210,8 +193,7 @@ def test_config_invalid(
     )
     juju.wait(
         lambda status: (
-            jubilant.all_blocked(status, app_name) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_blocked(status, app_name) and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -220,23 +202,20 @@ def test_config_invalid(
     assert current_status_message == expected_message, (
         f"Expected blocked message '{expected_message}', found '{current_status_message}'"
     )
-    juju.config(
-        app_name,
-        reset=list(config_changes.keys())
-    )
+    juju.config(app_name, reset=list(config_changes.keys()))
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
 
+
 def test_config_invalid_snap(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm handles invalid snap name."""
     juju.config(app_name, {"snap-name": "non-existent-snap"})
     juju.wait(
         lambda status: (
-            jubilant.all_blocked(status, app_name) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_blocked(status, app_name) and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -245,9 +224,8 @@ def test_config_invalid_snap(juju: jubilant.Juju, app_name: str) -> None:
     current_status_message = juju.status().apps[app_name].app_status.message
     assert current_status_message == (
         "Could not fetch info for snap non-existent-snap. See juju debug-log for details."
-    ), (
-        f"Expected blocked message for non-existent snap, found '{current_status_message}'"
-    )
+    ), f"Expected blocked message for non-existent snap, found '{current_status_message}'"
+
 
 def test_config_change_exporter(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can change the exporter snap."""
@@ -258,7 +236,7 @@ def test_config_change_exporter(juju: jubilant.Juju, app_name: str) -> None:
             "exporter-port": NODE_EXPORTER_EXPORTER_PORT,
             "snap-channel": "latest/beta",
             "snap-plugs": "hardware-observe,mount-observe,network-observe,system-observe",
-        }
+        },
     )
 
     juju.wait(
@@ -268,16 +246,14 @@ def test_config_change_exporter(juju: jubilant.Juju, app_name: str) -> None:
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        f"snap list {NODE_EXPORTER_SNAP_NAME}",
-        unit=principal_unit
-    )
+    task = juju.exec(f"snap list {NODE_EXPORTER_SNAP_NAME}", unit=principal_unit)
     assert NODE_EXPORTER_SNAP_NAME in task.stdout.strip(), (
         f"Expected snap {NODE_EXPORTER_SNAP_NAME} to be installed on the machine"
     )
     assert SMARTCTL_SNAP_NAME not in task.stdout.strip(), (
         f"Expected snap {SMARTCTL_SNAP_NAME} to be removed from the machine"
     )
+
 
 def test_unset_snap(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm removes the installed snap when snap-name is unset."""
@@ -293,10 +269,7 @@ def test_unset_snap(juju: jubilant.Juju, app_name: str) -> None:
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        "snap list",
-        unit=principal_unit
-    )
+    task = juju.exec("snap list", unit=principal_unit)
     assert NODE_EXPORTER_SNAP_NAME not in task.stdout.strip(), (
         f"Expected {NODE_EXPORTER_SNAP_NAME} snap to be removed from the machine"
     )
@@ -307,14 +280,15 @@ def test_unset_snap(juju: jubilant.Juju, app_name: str) -> None:
         {
             "snap-name": SMARTCTL_SNAP_NAME,
             "exporter-port": SMARTCTL_EXPORTER_PORT,
-            "snap-channel": "latest/stable"
-        }
+            "snap-channel": "latest/stable",
+        },
     )
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
+
 
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""
@@ -326,10 +300,7 @@ def test_remove(juju: jubilant.Juju, app_name: str) -> None:
         timeout=TIMEOUT,
     )
 
-    task = juju.exec(
-        "snap list",
-        unit=principal_unit
-    )
+    task = juju.exec("snap list", unit=principal_unit)
     assert SMARTCTL_SNAP_NAME not in task.stdout.strip(), (
         f"Expected {SMARTCTL_SNAP_NAME} snap to be removed from the machine"
     )

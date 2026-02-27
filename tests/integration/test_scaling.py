@@ -20,13 +20,17 @@ from helpers import (
 
 logger = logging.getLogger(__name__)
 
+
 def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> None:
     """Test that the charm deploys and relates correctly."""
     juju.deploy(
         charm,
         app=app_name,
         base=base,
-        config={"snap-name": SMARTCTL_SNAP_NAME, "exporter-port": SMARTCTL_EXPORTER_PORT},
+        config={
+            "snap-name": SMARTCTL_SNAP_NAME,
+            "exporter-port": SMARTCTL_EXPORTER_PORT,
+        },
     )
     juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
@@ -39,6 +43,7 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         timeout=TIMEOUT,
     )
 
+
 def test_scale_up(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can scale up and down."""
     juju.add_unit(UBUNTU_APP_NAME, to="0")
@@ -50,11 +55,9 @@ def test_scale_up(juju: jubilant.Juju, app_name: str) -> None:
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        "ls /opt/singleton_snaps | wc -l",
-        unit=principal_unit
-    )
+    task = juju.exec("ls /opt/singleton_snaps | wc -l", unit=principal_unit)
     assert task.stdout.strip() == "2", "Expected 2 files in /opt/singleton_snaps"
+
 
 def test_scale_down(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can scale down."""
@@ -67,19 +70,14 @@ def test_scale_down(juju: jubilant.Juju, app_name: str) -> None:
     )
 
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
-    task = juju.exec(
-        "ls /opt/singleton_snaps | wc -l",
-        unit=principal_unit
-    )
+    task = juju.exec("ls /opt/singleton_snaps | wc -l", unit=principal_unit)
     assert task.stdout.strip() == "1", "Expected 1 file in /opt/singleton_snaps"
 
-    task = juju.exec(
-        "snap list",
-        unit=principal_unit
-    )
+    task = juju.exec("snap list", unit=principal_unit)
     assert SMARTCTL_SNAP_NAME in task.stdout.strip(), (
         f"Expected snap {SMARTCTL_SNAP_NAME} to still be installed on the machine"
     )
+
 
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""

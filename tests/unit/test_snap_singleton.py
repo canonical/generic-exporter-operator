@@ -78,6 +78,7 @@ def test_is_used_by_other_units(lock_dir):
 
 def test_ensure_lock_dir_exists_error(monkeypatch):
     """Test that an OSError other than EEXIST is raised."""
+
     def mock_makedirs(path, exist_ok):
         raise OSError(13, "Permission denied")
 
@@ -87,8 +88,10 @@ def test_ensure_lock_dir_exists_error(monkeypatch):
         SingletonSnapManager._ensure_lock_dir_exists()
     assert exc_info.value.errno == 13
 
+
 def test_ensure_lock_dir_exists_eexist(monkeypatch):
     """Test that OSError with EEXIST is ignored."""
+
     def mock_makedirs(path, exist_ok):
         raise OSError(errno.EEXIST, "File exists")
 

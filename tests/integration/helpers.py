@@ -114,6 +114,7 @@ def get_unit_relation_data(
             return relation.get("related-units", {}).get(app_unit, {}).get("data", {})
     return {}
 
+
 def get_app_unit(juju: jubilant.Juju, app_name: str, id: int = 0) -> str:
     """Get the unit name for a given application and unit id.
 
@@ -134,6 +135,7 @@ def get_app_unit(juju: jubilant.Juju, app_name: str, id: int = 0) -> str:
     assert unit_names, f"No units found for application {app_name}"
     assert id < len(unit_names), f"Unit id {id} out of range for application {app_name}"
     return unit_names[id]
+
 
 def assert_scrape_job(
     juju: jubilant.Juju,
@@ -178,15 +180,14 @@ def assert_scrape_job(
     assert targets, "No targets found in static config"
 
     target = targets[0]
-    assert target == metrics_target, (
-        f"Expected metrics endpoint {metrics_target}, found {target}"
-    )
+    assert target == metrics_target, f"Expected metrics endpoint {metrics_target}, found {target}"
 
     config_labels = static_configs[0].get("labels", {})
     for label in labels:
         assert label in config_labels.keys(), (
             f"Expected label {label} not found in scrape job labels {config_labels}"
         )
+
 
 @retry(
     wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -218,6 +219,7 @@ def assert_metrics_endpoint(
         f"Metrics endpoint http://localhost:{metrics_port}{metrics_path} is not accessible"
     )
 
+
 def assert_alerts_rules(
     juju: jubilant.Juju,
     app_name: str,
@@ -243,12 +245,8 @@ def assert_alerts_rules(
 
     groups = alerts.get("groups", [])
     assert groups, "No alerting groups found in relation data"
-    relation_alert_rules =  {
-        rule["alert"] for group in groups for rule in group["rules"]
-    }
-    assert alert_rules.issubset(
-        relation_alert_rules
-    ), (
+    relation_alert_rules = {rule["alert"] for group in groups for rule in group["rules"]}
+    assert alert_rules.issubset(relation_alert_rules), (
         f"Provided alert rules: {alert_rules} "
         f"are not included in the relation alert rules: {relation_alert_rules}"
     )

@@ -71,6 +71,14 @@ lint.extend-ignore = [
 extend-exclude = ["__pycache__", "*.egg_info", "lib/*"]
 lint.per-file-ignores = {"tests/*" = ["D100","D101","D102","D103","D104"]}
 
+[tool.isort]
+profile = "black"
+line_length = 99
+
+[tool.black]
+line-length = 99
+target-version = ["py312"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
@@ -78,8 +86,9 @@ max-complexity = 10
 convention = "google"
 
 [tool.codespell]
-skip = "build,lib,venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"
+skip = "lib,.venv,.tox,.git,.mypy_cache,.ruff_cache,.coverage,uv.lock"
 
 [tool.pyright]
-extraPaths = ["src", "lib"]
+include = ["src", "lib"]
+extraPaths = ["lib", "src"]
 exclude = ["lib"]

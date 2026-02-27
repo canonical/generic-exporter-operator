@@ -34,6 +34,7 @@ ALERTS_RESOURCE_NAME = "alerts"
 ALERTS_TARGET_FILE = "alerts.yaml"
 COS_AGENT_RELATION_NAME = "cos-agent"
 
+
 class CharmError(Exception):
     """Base class for all charm errors."""
 
@@ -156,8 +157,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
 
         if not self.snap_client.install(self.conf.snap_revision, self.conf.snap_classic):
             raise CharmInstallError(
-                f"Failed to install snap: {self.conf.snap_name}. "
-                "See juju debug-log for details."
+                f"Failed to install snap: {self.conf.snap_name}. See juju debug-log for details."
             )
 
         self.stored.installed_snap_name = self.conf.snap_name
@@ -165,7 +165,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             raise CharmInstallError(
                 f"Failed to start snap services for: {self.conf.snap_name}. "
                 "See juju debug-log for details."
-                )
+            )
 
     def _check_status(self) -> None:
         """Check the status of the snap exporter.
@@ -174,18 +174,14 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             CharmStatusError: If the snap services are not active
         """
         if missing := self.conf.check_required_fields():
-            raise CharmStatusError(
-                f"Missing required configuration fields: {', '.join(missing)}"
-            )
+            raise CharmStatusError(f"Missing required configuration fields: {', '.join(missing)}")
 
         if self.snap_client is not None and not self.snap_client.check():
             raise CharmStatusError(f"Snap services for {self.conf.snap_name} are not active.")
 
         url = f"http://localhost:{self.conf.exporter_port}/{self.conf.metrics_path}"
         if not check_metrics_endpoint(url):
-            raise CharmStatusError(
-                f"Metrics endpoint for {self.conf.snap_name} is not reachable."
-            )
+            raise CharmStatusError(f"Metrics endpoint for {self.conf.snap_name} is not reachable.")
 
         if not self.cos_agent_related:
             raise CharmStatusError(f"Missing relation: [{COS_AGENT_RELATION_NAME}]")
@@ -258,12 +254,9 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         manager.unregister(snap_name)
         if not manager.is_used_by_other_units(snap_name):
             if not snap_client.remove():
-                logger.error(
-                    "Failed to uninstall snap: %s", snap_name
-                )
+                logger.error("Failed to uninstall snap: %s", snap_name)
                 raise CharmUninstallError(
-                    f"Failed to uninstall snap: {snap_name}. "
-                    "See juju debug-log for details."
+                    f"Failed to uninstall snap: {snap_name}. See juju debug-log for details."
                 )
 
         self.stored.installed_snap_name = None
@@ -272,7 +265,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         """Configure the alerts for the exporter."""
         try:
             resource_path = self.model.resources.fetch(ALERTS_RESOURCE_NAME)
-        except (ops.ModelError, NameError): # pragma: no cover
+        except (ops.ModelError, NameError):  # pragma: no cover
             logger.info("No alerts resource provided; skipping alerts configuration.")
             return
 
@@ -298,7 +291,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             return
 
         self.rules_dir.mkdir(parents=True, exist_ok=True)
-        destination =  self.rules_dir / ALERTS_TARGET_FILE
+        destination = self.rules_dir / ALERTS_TARGET_FILE
         destination.write_text(content)
 
     def _configure_cos_relation(self) -> Optional[COSAgentProvider]:
@@ -337,7 +330,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         if client is not None:
             self.unit.set_workload_version(client.snap_version or "unknown")
         else:
-            self.unit.set_workload_version("") # Nothing
+            self.unit.set_workload_version("")  # Nothing
 
     def _get_snap_config_diff(self) -> List[str]:
         """Returns the diff list of keys between new and old snap config.
@@ -355,9 +348,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
 
     def _log_and_set_status(
         self,
-        status: Union[
-            ops.ActiveStatus, ops.MaintenanceStatus, ops.BlockedStatus
-        ],
+        status: Union[ops.ActiveStatus, ops.MaintenanceStatus, ops.BlockedStatus],
     ) -> None:
         """Set the status of the charm and logs the status message.
 
@@ -406,9 +397,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         except ValidationError as ve:
             logger.info(ve)
             messages = [err["msg"].removeprefix("Value error, ") for err in ve.errors()]
-            raise CharmConfigError(
-                f"Invalid configuration: {', '.join(messages)}"
-            )
+            raise CharmConfigError(f"Invalid configuration: {', '.join(messages)}")
 
         if config.snap_name:
             snap_info = get_snap_info(config.snap_name, config.snap_channel)

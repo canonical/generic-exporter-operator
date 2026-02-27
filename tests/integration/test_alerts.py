@@ -25,13 +25,17 @@ from helpers import (
 logger = logging.getLogger(__name__)
 TEMP_DIR = pathlib.Path(__file__).parent.resolve()
 
+
 def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> None:
     """Test that the charm deploys and relates correctly."""
     juju.deploy(
         charm,
         app=app_name,
         base=base,
-        config={"snap-name": SMARTCTL_SNAP_NAME, "exporter-port": SMARTCTL_EXPORTER_PORT},
+        config={
+            "snap-name": SMARTCTL_SNAP_NAME,
+            "exporter-port": SMARTCTL_EXPORTER_PORT,
+        },
     )
     juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
@@ -44,6 +48,7 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         timeout=TIMEOUT,
     )
 
+
 def test_dump_alerts_empty(juju: jubilant.Juju, app_name: str) -> None:
     """Test that dumping alerts when none are configured."""
     app_unit = get_app_unit(juju, app_name)
@@ -55,11 +60,12 @@ def test_dump_alerts_empty(juju: jubilant.Juju, app_name: str) -> None:
     app_unit_id = app_unit.split("/")[1]
     task = juju.exec(
         f"test -e /run/{app_name}-{app_unit_id}/alerts.yaml || echo 'not found'",
-        unit=principal_unit
+        unit=principal_unit,
     )
     assert task.stdout.strip() == "not found", (
         "Expected alerts.yaml to not exist when no alerts are configured"
     )
+
 
 def test_invalid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     """Test that invalid alerts configuration is handled."""
@@ -67,7 +73,12 @@ def test_invalid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
 
     with tempfile.NamedTemporaryFile(
-        delete=False, mode='w', newline='', encoding='utf-8', dir=TEMP_DIR, suffix='.yaml'
+        delete=False,
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        dir=TEMP_DIR,
+        suffix=".yaml",
     ) as alerts_file:
         alerts_file.write(INVALID_ALERTS_YAML)
         alerts_file_path = alerts_file.name
@@ -75,8 +86,8 @@ def test_invalid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     juju.cli("attach-resource", app_name, f"alerts={alerts_file_path}")
     juju.wait(
         lambda status: (
-            jubilant.all_active(status, app_name, UBUNTU_APP_NAME) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_active(status, app_name, UBUNTU_APP_NAME)
+            and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -85,11 +96,12 @@ def test_invalid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     app_unit_id = app_unit.split("/")[1]
     task = juju.exec(
         f"test -e /run/{app_name}-{app_unit_id}/alerts.yaml || echo 'not found'",
-        unit=principal_unit
+        unit=principal_unit,
     )
     assert task.stdout.strip() == "not found", (
         "Expected alerts.yaml to not exist after attaching invalid alerts"
     )
+
 
 def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     """Test that valid alerts configuration is handled."""
@@ -97,7 +109,12 @@ def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
 
     with tempfile.NamedTemporaryFile(
-        delete=False, mode='w', newline='', encoding='utf-8', dir=TEMP_DIR, suffix='.yaml'
+        delete=False,
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        dir=TEMP_DIR,
+        suffix=".yaml",
     ) as alerts_file:
         alerts_file.write(VALID_ALERTS_YAML)
         alerts_file_path = alerts_file.name
@@ -105,8 +122,8 @@ def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     juju.cli("attach-resource", app_name, f"alerts={alerts_file_path}")
     juju.wait(
         lambda status: (
-            jubilant.all_active(status, app_name, UBUNTU_APP_NAME) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_active(status, app_name, UBUNTU_APP_NAME)
+            and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -115,18 +132,24 @@ def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     app_unit_id = app_unit.split("/")[1]
     task = juju.exec(
         f"test -e /run/{app_name}-{app_unit_id}/alerts.yaml || echo 'not found'",
-        unit=principal_unit
+        unit=principal_unit,
     )
     assert task.stdout.strip() != "not found", (
         "Expected alerts.yaml to exist after attaching valid alerts"
     )
+
 
 def test_dump_alerts(juju: jubilant.Juju, app_name: str) -> None:
     """Test that dumping alerts works correctly."""
     app_unit = get_app_unit(juju, app_name)
 
     with tempfile.NamedTemporaryFile(
-        delete=False, mode='w', newline='', encoding='utf-8', dir=TEMP_DIR, suffix='.yaml'
+        delete=False,
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        dir=TEMP_DIR,
+        suffix=".yaml",
     ) as alerts_file:
         alerts_file.write(VALID_ALERTS_YAML)
         alerts_file_path = alerts_file.name
@@ -134,8 +157,8 @@ def test_dump_alerts(juju: jubilant.Juju, app_name: str) -> None:
     juju.cli("attach-resource", app_name, f"alerts={alerts_file_path}")
     juju.wait(
         lambda status: (
-            jubilant.all_active(status, app_name, UBUNTU_APP_NAME) and
-            jubilant.all_agents_idle(status, app_name)
+            jubilant.all_active(status, app_name, UBUNTU_APP_NAME)
+            and jubilant.all_agents_idle(status, app_name)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
@@ -152,6 +175,7 @@ def test_dump_alerts(juju: jubilant.Juju, app_name: str) -> None:
         "Expected dumped alerts content to match the valid alerts YAML"
     )
 
+
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""
     app_unit = get_app_unit(juju, app_name)
@@ -166,12 +190,10 @@ def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     app_unit_id = app_unit.split("/")[1]
     task = juju.exec(
         f"test -e /run/{app_name}-{app_unit_id}/alerts.yaml || echo 'not found'",
-        unit=principal_unit
+        unit=principal_unit,
     )
     assert task.stdout.strip() == "not found", (
         "Expected alerts.yaml to be removed after application removal"
     )
     juju.remove_application(GRAFANA_AGENT_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)
-
-

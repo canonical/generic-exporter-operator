@@ -11,6 +11,7 @@ from pydantic import BaseModel, field_validator, model_validator
 
 REQUIRED_FIELDS = ["snap_name", "exporter_port"]
 
+
 class CharmConfig(BaseModel):
     """Manager for the user configuration of the charm."""
 
@@ -29,7 +30,7 @@ class CharmConfig(BaseModel):
         missing_fields = []
         for field in REQUIRED_FIELDS:
             if getattr(self, field, None) is None:
-                missing_fields.append(field.replace('_', '-'))
+                missing_fields.append(field.replace("_", "-"))
         if missing_fields:
             return missing_fields
         return None
@@ -78,7 +79,7 @@ class CharmConfig(BaseModel):
     @classmethod
     def normalize_metrics_path(cls, v: str):
         """Ensure no leading forward slash in metrics path."""
-        return v.strip().lstrip('/')
+        return v.strip().lstrip("/")
 
     @field_validator("snap_plugs", mode="before")
     @classmethod

@@ -7,7 +7,7 @@ import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, List, Optional
 
 import requests
 from charms.operator_libs_linux.v2 import snap
@@ -22,11 +22,13 @@ from tenacity import (
 
 logger = logging.getLogger(__name__)
 
+
 class Confinement(Enum):
     """Snap confinement types."""
 
     STRICT = "strict"
     CLASSIC = "classic"
+
 
 @dataclass
 class SnapInfo:
@@ -36,17 +38,20 @@ class SnapInfo:
     revision: Optional[int]
     confinement: Confinement
 
+
 class SecretInvalidContentError(ValueError):
     """A mandatory field is invalid in the secret content."""
 
+
 class SecretAccessError(ModelError):
     """The secret access was not successful."""
+
 
 @retry(
     stop=stop_after_attempt(5),
     wait=wait_fixed(2),
     retry=retry_if_result(lambda x: x is False),
-    retry_error_callback=(lambda state: state.outcome.result()), # type: ignore
+    retry_error_callback=(lambda state: state.outcome.result()),  # type: ignore
 )
 def check_metrics_endpoint(url: str) -> bool:
     """Check if the metrics endpoint is reachable.
@@ -60,6 +65,7 @@ def check_metrics_endpoint(url: str) -> bool:
     except requests.RequestException:
         logger.warning("Metrics endpoint %s is not reachable yet.", url)
         return False
+
 
 def flatten_dict(data: dict, parent_key: str = "") -> dict:
     """Flatten a nested dict to dot-notation keys.
@@ -75,7 +81,7 @@ def flatten_dict(data: dict, parent_key: str = "") -> dict:
         {"web": {"port": 1922}} -> {"web.port": 1922}
     """
     sep = "."
-    items = []
+    items: List[tuple[str, Any]] = []
 
     for k, v in data.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -85,6 +91,7 @@ def flatten_dict(data: dict, parent_key: str = "") -> dict:
             items.append((new_key, v))
 
     return dict(items)
+
 
 def merge_dicts(data_1: dict, data_2: dict, path: str = "") -> dict:
     """Deep-merge two dicts safely.
@@ -108,6 +115,7 @@ def merge_dicts(data_1: dict, data_2: dict, path: str = "") -> dict:
             raise ValueError(f"The configs conflict at key: {current_path}")
 
     return result
+
 
 def get_snap_info(snap_name: str, snap_channel: Optional[str] = None) -> Optional[SnapInfo]:
     """Extract the revision from a snap channel string.
@@ -140,6 +148,7 @@ def get_snap_info(snap_name: str, snap_channel: Optional[str] = None) -> Optiona
         logger.error("Failed to get snap information for %s: %s", snap_name, err)
         return None
 
+
 def _get_revision_from_response(response: dict, snap_channel: str) -> Optional[int]:
     """Helper function to extract revision from snap information response.
 
@@ -161,6 +170,7 @@ def _get_revision_from_response(response: dict, snap_channel: str) -> Optional[i
         return int(revision)
     return None
 
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_fixed(5),
@@ -180,7 +190,7 @@ def decode_secret(model: Model, id: str) -> dict:
         id: The ID (URI) of the secret that contains the config
 
     Raises:
-        SecretAccessError: When the secret access failes.
+        SecretAccessError: When the secret access fails.
         SecretInvalidContentError: When the secret's content is invalid.
 
     Returns:
