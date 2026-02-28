@@ -10,11 +10,11 @@ import pytest
 import yaml
 from helpers import (
     COS_ENDPOINT,
-    GRAFANA_AGENT_APP,
-    GRAFANA_AGENT_CHANNEL,
     JUJU_INFO_ENDPOINT,
     NODE_EXPORTER_EXPORTER_PORT,
     NODE_EXPORTER_SNAP_NAME,
+    OTCOL_APP,
+    OTCOL_CHANNEL,
     SMARTCTL_EXPORTER_PORT,
     SMARTCTL_SNAP_NAME,
     TIMEOUT,
@@ -36,9 +36,9 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         base=base,
         config={},
     )
-    juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
+    juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
-    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{GRAFANA_AGENT_APP}:{COS_ENDPOINT}")
+    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
 
     juju.wait(
@@ -282,6 +282,7 @@ def test_unset_snap(juju: jubilant.Juju, app_name: str) -> None:
             "exporter-port": SMARTCTL_EXPORTER_PORT,
             "snap-channel": "latest/stable",
         },
+        reset=["snap-plugs"],
     )
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
@@ -304,5 +305,5 @@ def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     assert SMARTCTL_SNAP_NAME not in task.stdout.strip(), (
         f"Expected {SMARTCTL_SNAP_NAME} snap to be removed from the machine"
     )
-    juju.remove_application(GRAFANA_AGENT_APP, destroy_storage=True)
+    juju.remove_application(OTCOL_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)

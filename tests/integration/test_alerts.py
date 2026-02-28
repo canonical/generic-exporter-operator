@@ -9,10 +9,10 @@ import tempfile
 import jubilant
 from helpers import (
     COS_ENDPOINT,
-    GRAFANA_AGENT_APP,
-    GRAFANA_AGENT_CHANNEL,
     INVALID_ALERTS_YAML,
     JUJU_INFO_ENDPOINT,
+    OTCOL_APP,
+    OTCOL_CHANNEL,
     SMARTCTL_EXPORTER_PORT,
     SMARTCTL_SNAP_NAME,
     TIMEOUT,
@@ -37,9 +37,9 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
             "exporter-port": SMARTCTL_EXPORTER_PORT,
         },
     )
-    juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
+    juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
-    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{GRAFANA_AGENT_APP}:{COS_ENDPOINT}")
+    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
 
     juju.wait(
@@ -101,6 +101,7 @@ def test_invalid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     assert task.stdout.strip() == "not found", (
         "Expected alerts.yaml to not exist after attaching invalid alerts"
     )
+    pathlib.Path(alerts_file_path).unlink()
 
 
 def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
@@ -137,6 +138,7 @@ def test_valid_alerts(juju: jubilant.Juju, app_name: str) -> None:
     assert task.stdout.strip() != "not found", (
         "Expected alerts.yaml to exist after attaching valid alerts"
     )
+    pathlib.Path(alerts_file_path).unlink()
 
 
 def test_dump_alerts(juju: jubilant.Juju, app_name: str) -> None:
@@ -174,6 +176,7 @@ def test_dump_alerts(juju: jubilant.Juju, app_name: str) -> None:
     assert VALID_ALERTS_YAML.strip() in task.log[0], (
         "Expected dumped alerts content to match the valid alerts YAML"
     )
+    pathlib.Path(alerts_file_path).unlink()
 
 
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
@@ -195,5 +198,5 @@ def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     assert task.stdout.strip() == "not found", (
         "Expected alerts.yaml to be removed after application removal"
     )
-    juju.remove_application(GRAFANA_AGENT_APP, destroy_storage=True)
+    juju.remove_application(OTCOL_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)

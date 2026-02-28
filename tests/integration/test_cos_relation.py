@@ -9,9 +9,9 @@ import tempfile
 import jubilant
 from helpers import (
     COS_ENDPOINT,
-    GRAFANA_AGENT_APP,
-    GRAFANA_AGENT_CHANNEL,
     JUJU_INFO_ENDPOINT,
+    OTCOL_APP,
+    OTCOL_CHANNEL,
     SMARTCTL_EXPORTER_METRICS_PATH,
     SMARTCTL_EXPORTER_PORT,
     SMARTCTL_SNAP_NAME,
@@ -41,15 +41,15 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
         },
     )
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
-    juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
+    juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
     juju.integrate(
         f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}",
-        f"{GRAFANA_AGENT_APP}:{JUJU_INFO_ENDPOINT}",
+        f"{OTCOL_APP}:{JUJU_INFO_ENDPOINT}",
     )
 
     juju.wait(
-        lambda status: jubilant.all_blocked(status, app_name, GRAFANA_AGENT_APP),
+        lambda status: jubilant.all_blocked(status, app_name, OTCOL_APP),
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
@@ -61,8 +61,8 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
 
 
 def test_cos_relation(juju: jubilant.Juju, app_name: str) -> None:
-    """Test that the charm enters active state when Grafana Agent is related."""
-    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{GRAFANA_AGENT_APP}:{COS_ENDPOINT}")
+    """Test that the charm enters active state when opentelemtry-collector is related."""
+    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
 
     juju.wait(
         lambda status: jubilant.all_active(status, app_name),
@@ -97,6 +97,7 @@ def test_relation_data(juju: jubilant.Juju, app_name: str) -> None:
     target = f"localhost:{SMARTCTL_EXPORTER_PORT}"
     assert_scrape_job(juju, app_name, target, SMARTCTL_EXPORTER_METRICS_PATH, {"instance"})
     assert_alerts_rules(juju, app_name, {"ExampleAlert"})
+    pathlib.Path(alerts_file_path).unlink()
 
 
 def test_metrics_endpoint(juju: jubilant.Juju, app_name: str) -> None:
@@ -132,7 +133,7 @@ def test_config_exporter(juju: jubilant.Juju, app_name: str) -> None:
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""
     juju.remove_application(app_name)
-    juju.remove_application(GRAFANA_AGENT_APP, destroy_storage=True)
+    juju.remove_application(OTCOL_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)
 
     juju.wait(

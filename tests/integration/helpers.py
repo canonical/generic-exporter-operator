@@ -13,8 +13,8 @@ TIMEOUT = 10 * 60
 
 UBUNTU_CHANNEL = "latest/stable"
 UBUNTU_APP_NAME = "ubuntu"
-GRAFANA_AGENT_APP = "grafana-agent"
-GRAFANA_AGENT_CHANNEL = "1/stable"
+OTCOL_APP = "opentelemetry-collector"
+OTCOL_CHANNEL = "2/stable"
 
 SMARTCTL_SNAP_NAME = "smartctl-exporter"
 SMARTCTL_EXPORTER_PORT = 9633
@@ -156,7 +156,7 @@ def assert_scrape_job(
     Raises:
         AssertionError: If the endpoint is not accessible or does not match expectations
     """
-    relation_data = get_unit_relation_data(juju, GRAFANA_AGENT_APP, app_name, COS_ENDPOINT)
+    relation_data = get_unit_relation_data(juju, OTCOL_APP, app_name, COS_ENDPOINT)
     config = json.loads(relation_data.get("config", "{}"))
 
     scrape_jobs = config.get("metrics_scrape_jobs", [])
@@ -220,6 +220,11 @@ def assert_metrics_endpoint(
     )
 
 
+@retry(
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(10),
+    reraise=True,
+)
 def assert_alerts_rules(
     juju: jubilant.Juju,
     app_name: str,
@@ -227,7 +232,7 @@ def assert_alerts_rules(
 ):
     """Assert that the alerting rules are correctly provided in the relation data.
 
-    Relation is between the given app and the grafana-agent with cos-agent endpoint.
+    Relation is between the given app and the opentelemtry-collector with cos-agent endpoint.
 
     Args:
         juju: The Juju instance
@@ -237,7 +242,7 @@ def assert_alerts_rules(
     Raises:
         AssertionError: If the alerting rules are not correctly set
     """
-    relation_data = get_unit_relation_data(juju, GRAFANA_AGENT_APP, app_name, COS_ENDPOINT)
+    relation_data = get_unit_relation_data(juju, OTCOL_APP, app_name, COS_ENDPOINT)
     config = json.loads(relation_data.get("config", "{}"))
 
     alerts = config.get("metrics_alert_rules", {})
