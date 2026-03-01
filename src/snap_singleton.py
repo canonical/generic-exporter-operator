@@ -8,7 +8,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Set
+from typing import Set, Tuple
 
 
 @dataclass
@@ -18,7 +18,7 @@ class SnapRegistrationFile:
     The files are stored in the lock directory and follow a specific naming convention.
 
     The filename format is: LCK..<snap_name>__<unit_name>
-    Example: LCK..node-exporter__unit-1
+    Example: LCK..node-exporter--rev1__unit-0
 
     Attributes:
         unit_name: Name of the unit registering the snap
@@ -28,8 +28,10 @@ class SnapRegistrationFile:
 
     unit_name: str
     snap_name: str
+    snap_revision: int
 
     PREFIX = "LCK.."
+    SEPARATOR_REVISION = "--rev"
     SEPARATOR_UNIT = "__"
 
     @property
@@ -38,6 +40,8 @@ class SnapRegistrationFile:
         return (
             f"{self.PREFIX}"
             f"{self.snap_name}"
+            f"{self.SEPARATOR_REVISION}"
+            f"{str(self.snap_revision)}"
             f"{self.SEPARATOR_UNIT}"
             f"{SnapRegistrationFile._normalize_name(self.unit_name)}"
         )
@@ -46,10 +50,12 @@ class SnapRegistrationFile:
     def from_filename(filename: str):
         """Build a SnapRegistrationFile by parsing its filename."""
         _, filename = filename.split(SnapRegistrationFile.PREFIX)
-        snap_name, unit_name = filename.split(SnapRegistrationFile.SEPARATOR_UNIT)
+        snap_name, filename = filename.split(SnapRegistrationFile.SEPARATOR_REVISION)
+        snap_revision, unit_name = filename.split(SnapRegistrationFile.SEPARATOR_UNIT)
         return SnapRegistrationFile(
             unit_name=unit_name,
             snap_name=snap_name,
+            snap_revision=int(snap_revision),
         )
 
     @classmethod
@@ -70,11 +76,11 @@ class SingletonSnapManager:
 
     .. code-block:: python
         # For unit tracking
-        manager.register("unit-1")
+        manager.register("unit-1", 1)
         # Use the snap...
 
         # For unregistering
-        manager.unregister("unit-1")
+        manager.unregister("unit-1", 1)
 
     Raises:
         TimeoutError: If a lock could not be acquired within the specified timeout.
@@ -102,7 +108,7 @@ class SingletonSnapManager:
             if e.errno != errno.EEXIST:
                 raise
 
-    def register(self, snap_name: str) -> None:
+    def register(self, snap_name: str, snap_revision: int) -> None:
         """Register current unit as using the specified snap and revision.
 
         Args:
@@ -115,12 +121,37 @@ class SingletonSnapManager:
         registration_file = SnapRegistrationFile(
             unit_name=self.unit_name,
             snap_name=snap_name,
+            snap_revision=snap_revision,
         )
         with open(self.LOCK_DIR.joinpath(registration_file.filename), "w") as f:
             f.write("")
 
-    def unregister(self, snap_name: str) -> None:
+    def update_registration(self, snap_name: str, new_revision: int) -> None:
+        """Update the registration for the specified snap with a new revision.
+
+        This is useful when the snap revision changes is updated by the charm.
+
+        Args:
+            snap_name: Name of the snap.
+            new_revision: New revision to update in the lock file.
+        """
+        snaps = self.get_snaps()
+        if (snap_name, new_revision) in snaps:
+            return
+
+        for existing_snap_name, existing_revision in snaps:
+            if existing_snap_name == snap_name:
+                self.unregister(snap_name, existing_revision)
+                break
+
+        self.register(snap_name, new_revision)
+
+    def unregister(self, snap_name: str, snap_revision: int) -> None:
         """Unregister current unit from using the specified snap.
+
+        Args:
+            snap_name: Name of the snap.
+            snap_revision: Revision of the snap to unregister.
 
         Raises:
             OSError: if there is an I/O related error removing the lock file.
@@ -128,6 +159,7 @@ class SingletonSnapManager:
         registration_file = SnapRegistrationFile(
             unit_name=self.unit_name,
             snap_name=snap_name,
+            snap_revision=snap_revision,
         )
         os.remove(self.LOCK_DIR.joinpath(registration_file.filename))
 
@@ -158,6 +190,22 @@ class SingletonSnapManager:
                 units.add(registration_file.unit_name)
 
         return units
+
+    def get_snaps(self) -> Set[Tuple[str, int]]:
+        """Get all snaps currently registered for a unit (atomic with directory lock).
+
+        Returns:
+            Set of tuples containing snap names and revisions associated with the unit
+        """
+        snaps = set()
+        self._ensure_lock_dir_exists()
+
+        for filename in os.listdir(self.LOCK_DIR):
+            registration_file = SnapRegistrationFile.from_filename(filename)
+            if registration_file.unit_name == SnapRegistrationFile._normalize_name(self.unit_name):
+                snaps.add((registration_file.snap_name, registration_file.snap_revision))
+
+        return snaps
 
     def is_used_by_other_units(self, snap_name: str) -> bool:
         """Check if the specified snap is being used by other units."""
