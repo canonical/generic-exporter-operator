@@ -4,11 +4,14 @@
 """File-based registration for singleton snap operations."""
 
 import errno
+import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +36,9 @@ class SnapRegistrationFile:
     PREFIX = "LCK.."
     SEPARATOR_REVISION = "--rev"
     SEPARATOR_UNIT = "__"
+    FILENAME_PATTERN = re.compile(
+        rf"^{re.escape(PREFIX)}.+{re.escape(SEPARATOR_REVISION)}\d+{re.escape(SEPARATOR_UNIT)}.+$"
+    )
 
     @property
     def filename(self):
@@ -108,6 +114,48 @@ class SingletonSnapManager:
             if e.errno != errno.EEXIST:
                 raise
 
+    @classmethod
+    def _get_units(cls, snap_name: str) -> Set[str]:
+        """Get all units currently registered for a snap (atomic with directory lock).
+
+        Args:
+            snap_name: Name of the snap to get units for
+
+        Returns:
+            Set of unit names associated with the snap
+
+        Raises:
+            OSError: If there's an error accessing the lock directory
+        """
+        units = set()
+        for registration_file in cls._list_registration_files():
+            if registration_file.snap_name == snap_name:
+                units.add(registration_file.unit_name)
+
+        return units
+
+    @classmethod
+    def _list_registration_files(cls) -> list:
+        """List all valid SnapRegistrationFile objects in the lock directory.
+
+        Returns:
+            List of SnapRegistrationFile with all valid registration files in the lock directory.
+
+        Raises:
+            OSError: If there's an error accessing the lock directory
+        """
+        cls._ensure_lock_dir_exists()
+        result = []
+        for filename in os.listdir(cls.LOCK_DIR):
+            if not SnapRegistrationFile.FILENAME_PATTERN.match(filename):
+                logger.debug(
+                    "Ignoring file in singleton snap registry with unexpected format: %s",
+                    filename,
+                )
+                continue
+            result.append(SnapRegistrationFile.from_filename(filename))
+        return result
+
     def register(self, snap_name: str, snap_revision: int) -> None:
         """Register current unit as using the specified snap and revision.
 
@@ -163,34 +211,6 @@ class SingletonSnapManager:
         )
         os.remove(self.LOCK_DIR.joinpath(registration_file.filename))
 
-    @classmethod
-    def get_units(cls, snap_name: str) -> Set[str]:
-        """Get all units currently registered for a snap (atomic with directory lock).
-
-        This method is primarily useful for debugging purposes. In most scenarios, you
-        do not need to call this directly. Instead, use
-        :meth:`SingletonSnapManager.is_used_by_other_units` to detect if there are other
-        units registered with a snap.
-
-        Args:
-            snap_name: Name of the snap to get units for
-
-        Returns:
-            Set of unit names associated with the snap
-
-        Raises:
-            OSError: If there's an error accessing the lock directory
-        """
-        units = set()
-        cls._ensure_lock_dir_exists()
-
-        for filename in os.listdir(cls.LOCK_DIR):
-            registration_file = SnapRegistrationFile.from_filename(filename)
-            if registration_file.snap_name == snap_name:
-                units.add(registration_file.unit_name)
-
-        return units
-
     def get_snaps(self) -> Set[Tuple[str, int]]:
         """Get all snaps currently registered for a unit (atomic with directory lock).
 
@@ -198,10 +218,7 @@ class SingletonSnapManager:
             Set of tuples containing snap names and revisions associated with the unit
         """
         snaps = set()
-        self._ensure_lock_dir_exists()
-
-        for filename in os.listdir(self.LOCK_DIR):
-            registration_file = SnapRegistrationFile.from_filename(filename)
+        for registration_file in self._list_registration_files():
             if registration_file.unit_name == SnapRegistrationFile._normalize_name(self.unit_name):
                 snaps.add((registration_file.snap_name, registration_file.snap_revision))
 
@@ -209,4 +226,4 @@ class SingletonSnapManager:
 
     def is_used_by_other_units(self, snap_name: str) -> bool:
         """Check if the specified snap is being used by other units."""
-        return any(unit != self.unit_name for unit in self.get_units(snap_name))
+        return any(unit != self.unit_name for unit in self._get_units(snap_name))
