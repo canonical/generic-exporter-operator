@@ -64,7 +64,6 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         super().__init__(framework)
 
         self.conf = CharmConfig()
-        self.stored.set_default(installed_snap_name=None)
 
         self.framework.observe(self.on.install, self.reconcile)
         self.framework.observe(self.on.config_changed, self.reconcile)
@@ -97,6 +96,17 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         """Return whether the cos-agent relation is present."""
         return bool(self.model.relations.get(COS_AGENT_RELATION_NAME))
 
+    @property
+    def singleton_manager(self) -> SingletonSnapManager:
+        """Return the singleton snap manager for this unit."""
+        return SingletonSnapManager(self.unit.name)
+
+    @property
+    def get_installed_snap_names(self) -> List[str]:
+        """Return a list of installed snap names registered for this unit."""
+        snaps = self.singleton_manager.get_snaps()
+        return [snap_name for snap_name, _ in snaps]
+
     # EVENT HANDLERS
 
     def reconcile(self, event: ops.EventBase) -> None:
@@ -104,7 +114,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         try:
             self._validate_config()
 
-            if self.stored.installed_snap_name != self.conf.snap_name:
+            if self.conf.snap_name not in self.get_installed_snap_names:
                 self._log_and_set_status(ops.MaintenanceStatus("Installing charm resources"))
                 self._remove()
                 self._install()
@@ -152,15 +162,13 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             logger.info("No snap to install; skipping installation.")
             return
 
-        manager = SingletonSnapManager(self.unit.name)
-        manager.register(self.snap_client.name)
+        self.singleton_manager.register(self.snap_client.name, self.conf.snap_revision)
 
         if not self.snap_client.install(self.conf.snap_revision, self.conf.snap_classic):
             raise CharmInstallError(
                 f"Failed to install snap: {self.conf.snap_name}. See juju debug-log for details."
             )
 
-        self.stored.installed_snap_name = self.conf.snap_name
         if not self.snap_client.enable_and_start():
             raise CharmInstallError(
                 f"Failed to start snap services for: {self.conf.snap_name}. "
@@ -207,6 +215,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
                     "See juju debug-log for details."
                 )
             )
+        self.singleton_manager.update_registration(self.snap_client.name, self.conf.snap_revision)
 
         keys_to_unset = self._get_snap_config_diff()
         if keys_to_unset:
@@ -244,22 +253,21 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         Raises:
             CharmUninstallError: If the removal fails
         """
-        if self.stored.installed_snap_name is None:
+        snaps = self.singleton_manager.get_snaps()
+        if not snaps:
+            logger.info("No snaps registered for this unit; skipping removal.")
             return
 
-        snap_name = str(self.stored.installed_snap_name)
-        manager = SingletonSnapManager(self.unit.name)
-        snap_client = SnapClient(snap_name)
+        for snap_name, snap_revision in snaps:
+            snap_client = SnapClient(snap_name)
 
-        manager.unregister(snap_name)
-        if not manager.is_used_by_other_units(snap_name):
-            if not snap_client.remove():
-                logger.error("Failed to uninstall snap: %s", snap_name)
-                raise CharmUninstallError(
-                    f"Failed to uninstall snap: {snap_name}. See juju debug-log for details."
-                )
-
-        self.stored.installed_snap_name = None
+            self.singleton_manager.unregister(snap_name, snap_revision)
+            if not self.singleton_manager.is_used_by_other_units(snap_name):
+                if not snap_client.remove():
+                    logger.error("Failed to uninstall snap: %s", snap_name)
+                    raise CharmUninstallError(
+                        f"Failed to uninstall snap: {snap_name}. See juju debug-log for details."
+                    )
 
     def _configure_alerts(self) -> None:
         """Configure the alerts for the exporter."""

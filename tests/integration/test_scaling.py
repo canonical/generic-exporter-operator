@@ -7,9 +7,9 @@ import logging
 import jubilant
 from helpers import (
     COS_ENDPOINT,
-    GRAFANA_AGENT_APP,
-    GRAFANA_AGENT_CHANNEL,
     JUJU_INFO_ENDPOINT,
+    OTCOL_APP,
+    OTCOL_CHANNEL,
     SMARTCTL_EXPORTER_PORT,
     SMARTCTL_SNAP_NAME,
     TIMEOUT,
@@ -32,9 +32,9 @@ def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> No
             "exporter-port": SMARTCTL_EXPORTER_PORT,
         },
     )
-    juju.deploy(GRAFANA_AGENT_APP, channel=GRAFANA_AGENT_CHANNEL, base=base)
+    juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
-    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{GRAFANA_AGENT_APP}:{COS_ENDPOINT}")
+    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
 
     juju.wait(
@@ -82,7 +82,7 @@ def test_scale_down(juju: jubilant.Juju, app_name: str) -> None:
 def test_remove(juju: jubilant.Juju, app_name: str) -> None:
     """Test that the charm can be removed cleanly."""
     juju.remove_application(app_name)
-    juju.remove_application(GRAFANA_AGENT_APP, destroy_storage=True)
+    juju.remove_application(OTCOL_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)
 
     juju.wait(

@@ -3,7 +3,7 @@
 
 import logging
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Set
 
 import distro
 import jubilant
@@ -25,9 +25,26 @@ def pytest_addoption(parser) -> None:
 
 
 @pytest.fixture(scope="module")
-def base() -> str:
+def supported_bases() -> Set[str]:
+    """Determine the supported bases for testing."""
+    metadata = yaml.safe_load(Path("./charmcraft.yaml").read_text())
+    platforms = list(metadata.get("platforms", {}).keys())
+    bases = [p.split(":")[0] for p in platforms]
+    return set(bases)
+
+
+@pytest.fixture(scope="module")
+def base(supported_bases) -> str:
     """Determine the base for the charm tests."""
-    return f"{distro.id()}@{distro.version()}"
+    base = f"{distro.id()}@{distro.version()}"
+    if base not in supported_bases:
+        raise ValueError(
+            (
+                f"Current system base '{base}' is not supported by the charm, "
+                f"supported bases: {supported_bases}"
+            )
+        )
+    return base
 
 
 @pytest.fixture(scope="module")

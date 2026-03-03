@@ -15,7 +15,6 @@ from utils import Confinement, SnapInfo
 
 CHARM_NAME = "generic-exporter"
 STORED_STATE_NAME = "stored"
-STORED_SNAP_NAME_KEY = "installed_snap_name"
 DEFAULT_SNAP_INFO = SnapInfo(name="test-snap", revision=1, confinement=Confinement.STRICT)
 COS_AGENT_ENDPOINT_NAME = "cos-agent"
 
@@ -121,7 +120,11 @@ def test_invalid_config(
     ],
 )
 def test_snap_channel_revision_config(
-    config, mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    config,
+    mock_snap_client,
+    mock_check_metrics_endpoint,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Check that charm will try to resolve snap revision."""
     # Arrange:
@@ -131,20 +134,12 @@ def test_snap_channel_revision_config(
         if "snap-channel" in config
         else SnapInfo(name="test-snap", revision=None, confinement=Confinement.STRICT)
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     with ctx(
         ctx.on.update_status(),
-        testing.State(
-            config=config,
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
-        ),
+        testing.State(config=config),
     ) as mgr:
         pass
 
@@ -243,18 +238,12 @@ def test_on_install_no_snap(
     """Test install event handling when no snap is configured."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_singleton_snap_manager.get_snaps.return_value = [("old-snap", 1)]
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "old-snap"},
-                )
-            },
             config={
                 "exporter-port": 10000,
             },
@@ -290,19 +279,15 @@ def test_on_install(
     mock_snap_client.install.return_value = True
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     mock_singleton_snap_manager.is_used_by_other_units.return_value = False
+    mock_singleton_snap_manager.get_snaps.return_value = (
+        [(stored_snap_name, 1)] if stored_snap_name else []
+    )
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
             relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: stored_snap_name},
-                )
-            },
             config={
                 "snap-name": snap_name,
                 "exporter-port": 10000,
@@ -335,18 +320,12 @@ def test_on_install_snap_remove_failed(
     mock_snap_client.remove.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     mock_singleton_snap_manager.is_used_by_other_units.return_value = False
+    mock_singleton_snap_manager.get_snaps.return_value = [("old-snap", 1)]
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "old-snap"},
-                )
-            },
             config={
                 "snap-name": "new-snap",
                 "exporter-port": 10000,
@@ -373,20 +352,12 @@ def test_on_install_snap_start_service_failed(
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.enable_and_start.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = []
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: None,
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -412,20 +383,12 @@ def test_on_install_snap_install_failed(
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.install.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = []
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: None,
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -473,6 +436,7 @@ def test_on_update_status(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test update-status event handling."""
     # Arrange:
@@ -483,21 +447,13 @@ def test_on_update_status(
     relations = (
         [testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)] if cos_related else []
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
         ctx.on.install(),
         testing.State(
             relations=relations,
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -534,6 +490,9 @@ def test_on_remove(
     mock_snap_client.remove.return_value = True
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     mock_singleton_snap_manager.is_used_by_other_units.return_value = snap_used_by_others
+    mock_singleton_snap_manager.get_snaps.return_value = (
+        [(snap_installed, 1)] if snap_installed else []
+    )
 
     with tempfile.TemporaryDirectory() as config_parent_dir:
         alerts_dir = Path(config_parent_dir) / f"{CHARM_NAME}-{unit_id}"
@@ -547,13 +506,6 @@ def test_on_remove(
             state_out = ctx.run(
                 ctx.on.remove(),
                 testing.State(
-                    stored_states={
-                        testing.StoredState(
-                            STORED_STATE_NAME,
-                            owner_path="GenericExporterOperatorCharm",
-                            content={STORED_SNAP_NAME_KEY: snap_installed},
-                        )
-                    },
                     config={
                         "snap-name": "test-snap",
                         "exporter-port": 10000,
@@ -594,7 +546,11 @@ def test_on_remove(
     ],
 )
 def test_on_config_changed(
-    config, mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    config,
+    mock_snap_client,
+    mock_check_metrics_endpoint,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test config-changed event handling."""
     # Arrange:
@@ -602,6 +558,7 @@ def test_on_config_changed(
     mock_snap_client.set.return_value = True
     mock_snap_client.connect.return_value = True
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -611,15 +568,6 @@ def test_on_config_changed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config=config,
         ),
     )
@@ -641,13 +589,14 @@ def test_on_config_changed(
 
 
 def test_on_config_changed_snap_ensure_failed(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap ensure fails."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.ensure.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -656,15 +605,6 @@ def test_on_config_changed_snap_ensure_failed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -680,12 +620,15 @@ def test_on_config_changed_snap_ensure_failed(
     )
 
 
-def test_on_config_no_snap(mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info):
+def test_on_config_no_snap(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
     """Test config-changed event handling when snap is not set."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.set.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = []
 
     # Act:
     state_out = ctx.run(
@@ -708,13 +651,14 @@ def test_on_config_no_snap(mock_snap_client, mock_check_metrics_endpoint, mock_g
 
 
 def test_on_config_changed_snap_set_failed(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap set fails."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.set.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -723,15 +667,6 @@ def test_on_config_changed_snap_set_failed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -749,7 +684,7 @@ def test_on_config_changed_snap_set_failed(
 
 
 def test_on_config_changed_updated_snap_config(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap config is updated."""
     # Arrange:
@@ -759,6 +694,7 @@ def test_on_config_changed_updated_snap_config(
         "other-key": {"sub-key": 123},
     }
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -768,15 +704,6 @@ def test_on_config_changed_updated_snap_config(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -793,7 +720,7 @@ def test_on_config_changed_updated_snap_config(
 
 
 def test_on_config_changed_snap_unset_failed(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap connect fails."""
     # Arrange:
@@ -801,6 +728,7 @@ def test_on_config_changed_snap_unset_failed(
     mock_snap_client.unset.return_value = False
     mock_snap_client.get_config.return_value = {"other-key": "old-value"}
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -809,15 +737,6 @@ def test_on_config_changed_snap_unset_failed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -836,13 +755,14 @@ def test_on_config_changed_snap_unset_failed(
 
 
 def test_on_config_changed_snap_connect_failed(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap connect fails."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.connect.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -851,15 +771,6 @@ def test_on_config_changed_snap_connect_failed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -878,13 +789,14 @@ def test_on_config_changed_snap_connect_failed(
 
 
 def test_on_config_changed_snap_start_failed(
-    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
 ):
     """Test config-changed event handling when snap start fails."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_snap_client.enable_and_start.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -893,15 +805,6 @@ def test_on_config_changed_snap_start_failed(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={
-                        STORED_SNAP_NAME_KEY: "test-snap",
-                    },
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -931,11 +834,13 @@ def test_on_config_changed_alerts_setup(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test config-changed event handling for alerts file setup."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm, unit_id=1, app_name=CHARM_NAME)
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     with tempfile.TemporaryDirectory() as alerts_dir:
         with patch("charm.CONFIG_PARENT_DIR", new=Path(alerts_dir)):
@@ -951,15 +856,6 @@ def test_on_config_changed_alerts_setup(
                 testing.State(
                     relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
                     resources=[testing.Resource(name="alerts", path=alerts_file_path)],
-                    stored_states={
-                        testing.StoredState(
-                            STORED_STATE_NAME,
-                            owner_path="GenericExporterOperatorCharm",
-                            content={
-                                STORED_SNAP_NAME_KEY: "test-snap",
-                            },
-                        )
-                    },
                     config={
                         "snap-name": "test-snap",
                         "exporter-port": 10000,
@@ -1027,6 +923,7 @@ def test_on_config_changed_snap_config_secret_success(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test config-changed with snap-config-secret successfully decoded."""
     # Arrange:
@@ -1036,6 +933,7 @@ def test_on_config_changed_snap_config_secret_success(
     secret = testing.Secret(
         tracked_content={"config": '{"secret-key": "secret-value"}'},
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1046,13 +944,6 @@ def test_on_config_changed_snap_config_secret_success(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1070,6 +961,7 @@ def test_on_config_changed_snap_config_secret_merged_with_snap_config(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that snap-config-secret is merged with snap-config."""
     # Arrange:
@@ -1081,6 +973,7 @@ def test_on_config_changed_snap_config_secret_merged_with_snap_config(
             "config": json.dumps({"secret-key": "secret-value", "other-key": {"sub-key": 42}})
         },
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1091,13 +984,6 @@ def test_on_config_changed_snap_config_secret_merged_with_snap_config(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1124,6 +1010,7 @@ def test_on_config_changed_snap_config_secret_merge_conflict(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that merge conflict between snap-config-secret and snap-config raises error."""
     # Arrange:
@@ -1132,6 +1019,7 @@ def test_on_config_changed_snap_config_secret_merge_conflict(
     secret = testing.Secret(
         tracked_content={"config": '{"conflict-key": "secret-value"}'},
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1141,13 +1029,6 @@ def test_on_config_changed_snap_config_secret_merge_conflict(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1168,6 +1049,7 @@ def test_on_config_changed_snap_config_secret_missing_config_field(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that secret without 'config' field raises appropriate error."""
     # Arrange:
@@ -1176,6 +1058,7 @@ def test_on_config_changed_snap_config_secret_missing_config_field(
     secret = testing.Secret(
         tracked_content={"other-field": "value"},
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1185,13 +1068,6 @@ def test_on_config_changed_snap_config_secret_missing_config_field(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1209,6 +1085,7 @@ def test_on_config_changed_snap_config_secret_invalid_json(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that secret with invalid JSON in config field raises error."""
     # Arrange:
@@ -1217,6 +1094,7 @@ def test_on_config_changed_snap_config_secret_invalid_json(
     secret = testing.Secret(
         tracked_content={"config": "not-valid-json{"},
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1226,13 +1104,6 @@ def test_on_config_changed_snap_config_secret_invalid_json(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1250,6 +1121,7 @@ def test_on_config_changed_snap_config_secret_json_not_dict(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that secret with JSON that is not a dict raises error."""
     # Arrange:
@@ -1258,6 +1130,7 @@ def test_on_config_changed_snap_config_secret_json_not_dict(
     secret = testing.Secret(
         tracked_content={"config": '["list", "not", "dict"]'},
     )
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
     state_out = ctx.run(
@@ -1267,13 +1140,6 @@ def test_on_config_changed_snap_config_secret_json_not_dict(
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
             secrets={secret},
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
@@ -1291,12 +1157,14 @@ def test_on_config_changed_snap_config_secret_not_found(
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
+    mock_singleton_snap_manager,
 ):
     """Test that missing secret raises appropriate error."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     secret_id = "secret:abcdefghij1234567890"
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     state_out = ctx.run(
         ctx.on.config_changed(),
@@ -1304,13 +1172,6 @@ def test_on_config_changed_snap_config_secret_not_found(
             resources=[
                 testing.Resource(name="alerts", path="alerts.yaml"),
             ],
-            stored_states={
-                testing.StoredState(
-                    STORED_STATE_NAME,
-                    owner_path="GenericExporterOperatorCharm",
-                    content={STORED_SNAP_NAME_KEY: "test-snap"},
-                )
-            },
             config={
                 "snap-name": "test-snap",
                 "exporter-port": 10000,
