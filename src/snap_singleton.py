@@ -20,7 +20,7 @@ class SnapRegistrationFile:
 
     The files are stored in the lock directory and follow a specific naming convention.
 
-    The filename format is: LCK..<snap_name>__<unit_name>
+    The filename format is: LCK..<snap_name>--rev<revision>__<unit_name>
     Example: LCK..node-exporter--rev1__unit-0
 
     Attributes:
@@ -82,11 +82,11 @@ class SingletonSnapManager:
 
     .. code-block:: python
         # For unit tracking
-        manager.register("unit-1", 1)
+        manager.register("snap-one", 1)
         # Use the snap...
 
         # For unregistering
-        manager.unregister("unit-1", 1)
+        manager.unregister("snap-two", 1)
 
     Raises:
         TimeoutError: If a lock could not be acquired within the specified timeout.
@@ -161,7 +161,7 @@ class SingletonSnapManager:
 
         Args:
             snap_name: Name of the snap.
-            snap_revision: Optional revision to put in the lock file. Defaults to an empty string.
+            snap_revision: Revision of the snap to register.
 
         Raises:
             OSError: if there is an I/O related error creating the lock file.

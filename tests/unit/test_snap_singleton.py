@@ -91,7 +91,6 @@ def test_update_registration_no_change():
 
 
 def test_update_registration_no_previous_registration():
-    """Test updating a registration that does not exist."""
     """Test updating a snap when other snaps exist but target snap is not yet registered."""
     unit_name = "unit-0"
     target_snap = "generic-exporter"
@@ -173,6 +172,7 @@ def test_ensure_lock_dir_exists_eexist(monkeypatch):
 
 
 def test_ignore_unexpected_files(lock_dir, caplog):
+    """Test that unexpected files in the lock directory are ignored and logged."""
     snap_name = "generic-exporter"
     unit_one = "unit-0"
     manager = SingletonSnapManager(unit_one)
