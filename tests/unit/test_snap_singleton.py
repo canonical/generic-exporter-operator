@@ -182,9 +182,12 @@ def test_ignore_unexpected_files(lock_dir, caplog):
     (lock_dir / "unexpected-file").write_text("")
     with caplog.at_level(logging.DEBUG):
         units = manager._get_units(snap_name)
+        snaps = manager.get_snaps()
 
     assert unit_one in units
+    assert (snap_name, 1) in snaps
     assert len(units) == 1, "Expected only the valid unit to be returned"
+    assert len(snaps) == 1, "Expected only the valid snap registration to be returned"
     assert any(
         "unexpected format" in record.message and "unexpected-file" in record.message
         for record in caplog.records
