@@ -6,10 +6,16 @@ on:
       - main
       - track/**
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   pull-request:
     name: PR
     uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v1
-    secrets: inherit
+    secrets:
+      CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
+      OBSERVABILITY_NOCTUA_TOKEN: ${{ secrets.OBSERVABILITY_NOCTUA_TOKEN || github.token }}
     with:
       provider: machine
