@@ -2,7 +2,7 @@
 # See LICENSE file for licensing details.
 
 type: charm
-name: generic-exporter-operator
+name: generic-exporter
 title: Generic Exporter
 summary: |
   A generic, configurable exporter charm that sets up an exporter from a snap and exports metrics and dashboard via COS relation.
@@ -20,7 +20,7 @@ links:
   source:
   - https://github.com/canonical/generic-exporter-operator
   website:
-  - https://charmhub.io/generic-exporter-operator
+  - https://charmhub.io/generic-exporter
   - https://github.com/canonical/generic-exporter-operator
 
 subordinate: true

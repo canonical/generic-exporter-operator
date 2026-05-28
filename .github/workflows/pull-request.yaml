@@ -7,15 +7,16 @@ on:
       - track/**
 
 permissions:
+  # Required for all workflows
+  security-events: write
+  # Only required for workflows in private repositories
+  actions: read
   contents: read
-  pull-requests: write
 
 jobs:
   pull-request:
     name: PR
-    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v1
-    secrets:
-      CHARMHUB_TOKEN: ${{ secrets.CHARMHUB_TOKEN }}
-      OBSERVABILITY_NOCTUA_TOKEN: ${{ secrets.OBSERVABILITY_NOCTUA_TOKEN || github.token }}
+    uses: canonical/observability/.github/workflows/charm-pull-request.yaml@v2
+    secrets: inherit
     with:
       provider: machine
