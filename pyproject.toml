@@ -4,10 +4,10 @@
 [project]
 name = "generic-exporter"
 version = "0.0"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 
 dependencies = [
-  "ops>=3.5.0",
+  "ops>=2.23.0,<3.0.0",
   "cosl",
   "pydantic",
   "tenacity",

@@ -7,7 +7,7 @@ import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 import requests
 from charms.operator_libs_linux.v2 import snap
@@ -81,7 +81,7 @@ def flatten_dict(data: dict, parent_key: str = "") -> dict:
         {"web": {"port": 1922}} -> {"web.port": 1922}
     """
     sep = "."
-    items: List[tuple[str, Any]] = []
+    items: List[Tuple[str, Any]] = []
 
     for k, v in data.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
