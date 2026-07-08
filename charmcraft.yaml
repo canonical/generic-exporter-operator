@@ -133,4 +133,3 @@ requires:
       `juju-info` provides basic compatibility with all charms.
     interface: juju-info
     scope: container
-    limit: 1
