@@ -16,7 +16,10 @@ import logging
 
 import jubilant
 from helpers import (
+    COS_ENDPOINT,
     JUJU_INFO_ENDPOINT,
+    OTCOL_APP,
+    OTCOL_CHANNEL,
     SMARTCTL_EXPORTER_PORT,
     SMARTCTL_SNAP_NAME,
     TIMEOUT,
@@ -41,9 +44,11 @@ def test_deploy_multiple_principals(
             "exporter-port": SMARTCTL_EXPORTER_PORT,
         },
     )
+    juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
     juju.deploy(app=UBUNTU_APP_NAME_2, charm="ubuntu", channel=UBUNTU_CHANNEL, base=base)
 
+    juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME_2}:{JUJU_INFO_ENDPOINT}")
 
@@ -79,6 +84,7 @@ def test_each_subordinate_active(juju: jubilant.Juju, app_name: str) -> None:
 def test_remove_multiple_principals(juju: jubilant.Juju, app_name: str) -> None:
     """Clean up all applications deployed in this module."""
     juju.remove_application(app_name)
+    juju.remove_application(OTCOL_APP, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME, destroy_storage=True)
     juju.remove_application(UBUNTU_APP_NAME_2, destroy_storage=True)
 
