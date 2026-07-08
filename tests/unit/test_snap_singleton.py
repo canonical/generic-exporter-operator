@@ -227,7 +227,7 @@ def test_is_colocated_with_same_app_false_only_self():
 
 
 def test_is_colocated_with_same_app_false_different_app():
-    """Different-app units on the same machine are not flagged (cross-app is a separate concern)."""
+    """Different-app units on the same machine are not flagged."""
     snap_name = "node-exporter"
     manager_a = SingletonSnapManager("app-alpha/0")
     manager_b = SingletonSnapManager("app-beta/0")
