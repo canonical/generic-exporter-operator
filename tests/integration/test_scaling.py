@@ -21,6 +21,13 @@ from helpers import (
 logger = logging.getLogger(__name__)
 
 
+def _one_active_one_blocked(status: jubilant.Status, app_name: str) -> bool:
+    """Return True when an app has exactly one active unit and one blocked unit."""
+    units = status.get_units(app_name)
+    statuses = [u.workload_status.current for u in units.values()]
+    return statuses.count("active") == 1 and statuses.count("blocked") == 1
+
+
 def test_deploy(juju: jubilant.Juju, charm: str, app_name: str, base: str) -> None:
     """Test that the charm deploys and relates correctly."""
     juju.deploy(
@@ -49,14 +56,22 @@ def test_scale_up(juju: jubilant.Juju, app_name: str) -> None:
     juju.add_unit(UBUNTU_APP_NAME, to="0")
 
     juju.wait(
-        lambda status: jubilant.all_active(status, app_name, UBUNTU_APP_NAME),
+        lambda status: (
+            jubilant.all_active(status, UBUNTU_APP_NAME)
+            and _one_active_one_blocked(status, app_name)
+        ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
     )
 
+    ge_units = juju.status().get_units(app_name)
+    blocked = [n for n, u in ge_units.items() if u.workload_status.current == "blocked"]
+    assert len(blocked) == 1, f"Expected exactly one blocked subordinate unit, got: {blocked}"
+
+    # The blocked unit must not have written a lockfile (guard fires before register())
     principal_unit = get_app_unit(juju, UBUNTU_APP_NAME)
     task = juju.exec("ls /opt/singleton_snaps | wc -l", unit=principal_unit)
-    assert task.stdout.strip() == "2", "Expected 2 files in /opt/singleton_snaps"
+    assert task.stdout.strip() == "1", "Blocked unit must not register a lockfile"
 
 
 def test_scale_down(juju: jubilant.Juju, app_name: str) -> None:

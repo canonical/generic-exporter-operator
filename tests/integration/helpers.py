@@ -13,6 +13,7 @@ TIMEOUT = 10 * 60
 
 UBUNTU_CHANNEL = "latest/stable"
 UBUNTU_APP_NAME = "ubuntu"
+UBUNTU_APP_NAME_2 = "ubuntu-two"
 OTCOL_APP = "opentelemetry-collector"
 OTCOL_CHANNEL = "2/stable"
 

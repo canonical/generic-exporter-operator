@@ -192,3 +192,46 @@ def test_ignore_unexpected_files(lock_dir, caplog):
         "unexpected format" in record.message and "unexpected-file" in record.message
         for record in caplog.records
     )
+
+
+def test_is_colocated_with_same_app_true():
+    """Detect co-location when another unit of the same app is already registered."""
+    snap_name = "node-exporter"
+    app_name = "my-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+    manager_1 = SingletonSnapManager("my-exporter/1")
+
+    manager_0.register(snap_name, 1)
+
+    assert manager_1.is_colocated_with_same_app(snap_name, app_name) is True
+
+
+def test_is_colocated_with_same_app_false_no_registrations():
+    """No co-location when nothing is registered on the machine yet."""
+    snap_name = "node-exporter"
+    app_name = "my-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+
+    assert manager_0.is_colocated_with_same_app(snap_name, app_name) is False
+
+
+def test_is_colocated_with_same_app_false_only_self():
+    """No co-location when only the current unit is registered."""
+    snap_name = "node-exporter"
+    app_name = "my-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+
+    manager_0.register(snap_name, 1)
+
+    assert manager_0.is_colocated_with_same_app(snap_name, app_name) is False
+
+
+def test_is_colocated_with_same_app_false_different_app():
+    """Different-app units on the same machine are not flagged."""
+    snap_name = "node-exporter"
+    manager_a = SingletonSnapManager("app-alpha/0")
+    manager_b = SingletonSnapManager("app-beta/0")
+
+    manager_a.register(snap_name, 1)
+
+    assert manager_b.is_colocated_with_same_app(snap_name, "app-beta") is False
