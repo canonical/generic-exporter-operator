@@ -229,3 +229,27 @@ class SingletonSnapManager:
     def is_used_by_other_units(self, snap_name: str) -> bool:
         """Check if the specified snap is being used by other units."""
         return any(unit != self.unit_name for unit in self._get_units(snap_name))
+
+    def is_colocated_with_same_app(self, snap_name: str, app_name: str) -> bool:
+        """Check if another unit of the same Juju application is registered for this snap.
+
+        This detects the case where two principals of the same subordinate app are
+        co-located on one machine — a single exporter-port config cannot serve both.
+
+        Note: this only guards against same-app co-location. If two *different*
+        generic-exporter apps request the same snap name on the same machine they
+        may conflict on snap revision.
+
+        Args:
+            snap_name: Name of the snap to check.
+            app_name: Juju application name of the current unit.
+
+        Returns:
+            True if another unit of the same app is already registered for this snap.
+        """
+        normalized_app_prefix = SnapRegistrationFile._normalize_name(app_name) + "_"
+        normalized_self = SnapRegistrationFile._normalize_name(self.unit_name)
+        return any(
+            u.startswith(normalized_app_prefix) and u != normalized_self
+            for u in self._get_units(snap_name)
+        )

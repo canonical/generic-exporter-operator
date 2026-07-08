@@ -113,6 +113,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         """Reconcile the charm state."""
         try:
             self._validate_config()
+            self._check_colocated_units()
 
             if self.conf.snap_name not in self.get_installed_snap_names:
                 self._log_and_set_status(ops.MaintenanceStatus("Installing charm resources"))
@@ -173,6 +174,21 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             raise CharmInstallError(
                 f"Failed to start snap services for: {self.conf.snap_name}. "
                 "See juju debug-log for details."
+            )
+
+    def _check_colocated_units(self) -> None:
+        """Raise CharmConfigError if another unit of this app is co-located on this machine.
+
+        Raises:
+            CharmConfigError: If a co-located unit of the same app is detected.
+        """
+        if self.conf.snap_name and self.singleton_manager.is_colocated_with_same_app(
+            self.conf.snap_name, self.app.name
+        ):
+            raise CharmConfigError(
+                "Another unit of this application is co-located on this machine. "
+                "A single exporter-port config cannot serve multiple "
+                "principals on the same machine."
             )
 
     def _check_status(self) -> None:

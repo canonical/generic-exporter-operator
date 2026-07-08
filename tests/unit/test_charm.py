@@ -46,6 +46,7 @@ def mock_get_snap_info():
 def mock_singleton_snap_manager():
     """Mock the SingletonSnapManager class in charm.py."""
     mock_manager = MagicMock()
+    mock_manager.is_colocated_with_same_app.return_value = False
     with patch("charm.SingletonSnapManager", return_value=mock_manager):
         yield mock_manager
 
@@ -200,6 +201,27 @@ def test_snap_revision_not_found(mock_get_snap_info):
     assert state_out.unit_status == testing.BlockedStatus(
         "Could not determine revision for snap test-snap on channel stable."
     )
+
+
+def test_blocked_when_colocated_units(
+    mock_snap_client,
+    mock_singleton_snap_manager,
+    mock_get_snap_info,
+):
+    """Charm sets BlockedStatus when another unit of the same app is co-located on the machine."""
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.is_colocated_with_same_app.return_value = True
+
+    state_out = ctx.run(
+        ctx.on.install(),
+        testing.State(
+            config={"snap-name": "test-snap", "exporter-port": 9090, "snap-channel": "stable"}
+        ),
+    )
+
+    assert state_out.unit_status.name == "blocked"
+    assert "co-located" in state_out.unit_status.message
 
 
 def test_snap_classic_not_allowed(mock_get_snap_info):
