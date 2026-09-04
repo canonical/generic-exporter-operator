@@ -64,8 +64,13 @@ def test_deploy_multiple_principals(
     )
 
     juju.wait(
-        lambda status: jubilant.all_active(
-            status, app_name, OTCOL_APP, UBUNTU_APP_NAME, UBUNTU_APP_NAME_2
+        lambda status: (
+            jubilant.all_active(status, app_name, UBUNTU_APP_NAME, UBUNTU_APP_NAME_2)
+            # opentelemetry-collector has no configured telemetry destination in this
+            # scenario (no send-remote-write/grafana-dashboards/etc.), so it legitimately
+            # stays "blocked" forever; just wait for its agent to settle so its cos-agent
+            # relation data is populated.
+            and jubilant.all_agents_idle(status, OTCOL_APP)
         ),
         error=jubilant.any_error,
         timeout=TIMEOUT,
