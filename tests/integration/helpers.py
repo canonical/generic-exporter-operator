@@ -89,6 +89,7 @@ def get_unit_relation_data(
     target_app_name: str,
     app_name: str,
     endpoint: str,
+    app_unit_id: int = 0,
 ) -> Dict[str, Any]:
     """Get unit relation data from endpoint name between two applications.
 
@@ -97,13 +98,15 @@ def get_unit_relation_data(
         target_app_name: The target application name
         app_name: The application name related to the target
         endpoint: The relation endpoint name
+        app_unit_id: The unit id of app_name to read relation data for (default 0)
+
     Returns:
         The relation data dictionary
 
     Raises:
         AssertionError: If the relation or application is not found
     """
-    app_unit = get_app_unit(juju, app_name)
+    app_unit = get_app_unit(juju, app_name, app_unit_id)
     target_unit = get_app_unit(juju, target_app_name)
 
     result = juju.cli("show-unit", target_unit, f"--related-unit={app_unit}")
