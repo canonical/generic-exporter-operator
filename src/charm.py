@@ -33,6 +33,7 @@ CONFIG_PARENT_DIR = "/run"
 ALERTS_RESOURCE_NAME = "alerts"
 ALERTS_TARGET_FILE = "alerts.yaml"
 COS_AGENT_RELATION_NAME = "cos-agent"
+PRINCIPAL_RELATION_NAME = "juju-info"
 
 
 class CharmError(Exception):
@@ -95,6 +96,20 @@ class GenericExporterOperatorCharm(ops.CharmBase):
     def cos_agent_related(self) -> bool:
         """Return whether the cos-agent relation is present."""
         return bool(self.model.relations.get(COS_AGENT_RELATION_NAME))
+
+    @property
+    def principal_unit(self) -> Optional[ops.model.Unit]:
+        """Return the principal unit this exporter's unit is co-located with, if any.
+
+        A `juju-info` relation is container-scoped, so from this unit's own point of
+        view at most one of the (possibly several, one per related principal
+        application) `juju-info` relations has units visible on it: the one for the
+        principal unit sharing this machine.
+        """
+        for relation in self.model.relations.get(PRINCIPAL_RELATION_NAME, []):
+            if relation.units:
+                return next(iter(relation.units))
+        return None
 
     @property
     def singleton_manager(self) -> SingletonSnapManager:
@@ -330,6 +345,12 @@ class GenericExporterOperatorCharm(ops.CharmBase):
 
         job_name = f"{self.app.name}_{self.unit.name.split('/')[1]}_{config.snap_name}_metrics"
 
+        labels = {"instance": socket.getfqdn()}
+        if config.label_principal_unit and (principal := self.principal_unit):
+            labels["juju_principal_application"] = principal.app.name
+            labels["juju_principal_unit"] = principal.name
+            labels["juju_principal_unit_number"] = principal.name.split("/")[1]
+
         return COSAgentProvider(
             self,
             scrape_configs=[
@@ -339,7 +360,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
                     "static_configs": [
                         {
                             "targets": [f"localhost:{config.exporter_port}"],
-                            "labels": {"instance": socket.getfqdn()},
+                            "labels": labels,
                         }
                     ],
                 }

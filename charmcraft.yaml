@@ -110,6 +110,19 @@ config:
       description: |
         The path on which the metrics are exported. Without a leading slash.
         Default is "metrics".
+    label-principal-unit:
+      type: boolean
+      default: false
+      description: |
+        If set to true, add juju_principal_application, juju_principal_unit and
+        juju_principal_unit_number labels to the exported metrics, identifying the
+        principal unit this exporter's unit is co-located with. Useful when several
+        principal applications share a single generic-exporter application, since
+        the automatic juju_application/juju_unit labelling otherwise only reflects
+        this charm's own (shared) identity.
+        Two principal units co-located on the same machine remain unsupported
+        regardless of this setting: the second unit's snap will fail to bind
+        exporter-port and it will block.
 
 resources:
   alerts:
