@@ -17,6 +17,7 @@ CHARM_NAME = "generic-exporter"
 STORED_STATE_NAME = "stored"
 DEFAULT_SNAP_INFO = SnapInfo(name="test-snap", revision=1, confinement=Confinement.STRICT)
 COS_AGENT_ENDPOINT_NAME = "cos-agent"
+PRINCIPAL_ENDPOINT_NAME = "juju-info"
 
 
 @pytest.fixture()
@@ -1205,3 +1206,106 @@ def test_on_config_changed_snap_config_secret_not_found(
     # Assert
     mock_snap_client.set.assert_not_called()
     assert "does not exist" in state_out.unit_status.message
+
+
+def _cos_agent_scrape_jobs(state):
+    """Extract the metrics scrape jobs the charm published on the cos-agent relation."""
+    relation = next(r for r in state.relations if r.endpoint == COS_AGENT_ENDPOINT_NAME)
+    data = json.loads(relation.local_unit_data["config"])
+    return data["metrics_scrape_jobs"]
+
+
+def test_cos_relation_labels_include_principal_unit(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Scrape job labels identify the principal unit when label-principal-unit is enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[
+                testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="launchpad-admin",
+                    remote_unit_id=3,
+                ),
+            ],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "label-principal-unit": True,
+            },
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert labels["juju_principal_application"] == "launchpad-admin"
+    assert labels["juju_principal_unit"] == "launchpad-admin/3"
+    assert labels["juju_principal_unit_number"] == "3"
+
+
+def test_cos_relation_labels_principal_unit_disabled_by_default(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Principal-unit labels are omitted unless label-principal-unit is explicitly enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[
+                testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="launchpad-admin",
+                    remote_unit_id=3,
+                ),
+            ],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={"snap-name": "test-snap", "exporter-port": 10000},
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert set(labels) == {"instance"}
+
+
+def test_cos_relation_labels_without_principal_unit(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Principal-unit labels are omitted when no juju-info relation exists, even if enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "label-principal-unit": True,
+            },
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert set(labels) == {"instance"}
