@@ -89,7 +89,8 @@ def get_unit_relation_data(
     target_app_name: str,
     app_name: str,
     endpoint: str,
-    app_unit_id: int = 0,
+    app_unit: Optional[str] = None,
+    target_unit: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get unit relation data from endpoint name between two applications.
 
@@ -98,7 +99,11 @@ def get_unit_relation_data(
         target_app_name: The target application name
         app_name: The application name related to the target
         endpoint: The relation endpoint name
-        app_unit_id: The unit id of app_name to read relation data for (default 0)
+        app_unit: Specific unit name of app_name to read relation data for. Defaults to
+            its first unit.
+        target_unit: Specific unit name of target_app_name to query. Defaults to its
+            first unit. For container-scoped relations, this must be a unit actually
+            co-located with app_unit or no relation data will be visible.
 
     Returns:
         The relation data dictionary
@@ -106,8 +111,8 @@ def get_unit_relation_data(
     Raises:
         AssertionError: If the relation or application is not found
     """
-    app_unit = get_app_unit(juju, app_name, app_unit_id)
-    target_unit = get_app_unit(juju, target_app_name)
+    app_unit = app_unit or get_app_unit(juju, app_name)
+    target_unit = target_unit or get_app_unit(juju, target_app_name)
 
     result = juju.cli("show-unit", target_unit, f"--related-unit={app_unit}")
     relations = yaml.safe_load(result).get(target_unit, {}).get("relation-info", [])
