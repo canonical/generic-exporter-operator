@@ -103,13 +103,26 @@ class GenericExporterOperatorCharm(ops.CharmBase):
 
         A `juju-info` relation is container-scoped, so from this unit's own point of
         view at most one of the (possibly several, one per related principal
-        application) `juju-info` relations has units visible on it: the one for the
-        principal unit sharing this machine.
+        application) `juju-info` relations is expected to have units visible on it:
+        the one for the principal unit sharing this machine. Juju itself enforces
+        that a subordinate unit can only enter the scope of the relation matching
+        its own principal application, so more than one visible relation here would
+        mean that guarantee didn't hold; refuse to guess in that case.
         """
-        for relation in self.model.relations.get(PRINCIPAL_RELATION_NAME, []):
-            if relation.units:
-                return next(iter(relation.units))
-        return None
+        visible = [
+            next(iter(relation.units))
+            for relation in self.model.relations.get(PRINCIPAL_RELATION_NAME, [])
+            if relation.units
+        ]
+        if len(visible) > 1:
+            logger.warning(
+                "Found principal units visible on %d juju-info relations for %s; "
+                "expected at most one. Refusing to guess which one owns this unit.",
+                len(visible),
+                self.unit.name,
+            )
+            return None
+        return visible[0] if visible else None
 
     @property
     def singleton_manager(self) -> SingletonSnapManager:
@@ -178,7 +191,9 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             logger.info("No snap to install; skipping installation.")
             return
 
-        self.singleton_manager.register(self.snap_client.name, self.conf.snap_revision)
+        self.singleton_manager.register(
+            self.snap_client.name, self.conf.snap_revision, self._snap_config_fingerprint()
+        )
 
         if not self.snap_client.install(self.conf.snap_revision, self.conf.snap_classic):
             raise CharmInstallError(
@@ -191,19 +206,49 @@ class GenericExporterOperatorCharm(ops.CharmBase):
                 "See juju debug-log for details."
             )
 
+    def _snap_config_fingerprint(self) -> dict:
+        """Return the config that determines whether this unit's snap install can be shared.
+
+        Can be shared with a co-located unit of the same application.
+
+        Two co-located units of this application (e.g. two different principal
+        applications sharing a machine) share a single snap instance, so it can only
+        be safely shared if every field that ends up applied to the snap matches.
+        """
+        return {
+            "snap_revision": self.conf.snap_revision,
+            "snap_classic": self.conf.snap_classic,
+            "exporter_port": self.conf.exporter_port,
+            "metrics_path": self.conf.metrics_path,
+            "snap_plugs": sorted(self.conf.snap_plugs) if self.conf.snap_plugs else [],
+            "snap_config": self.conf.snap_config or {},
+        }
+
     def _check_colocated_units(self) -> None:
-        """Raise CharmConfigError if another unit of this app is co-located on this machine.
+        """Raise CharmConfigError if a co-located unit of this app has conflicting config.
+
+        Two principals of this application can be co-located on the same machine
+        (e.g. two different principal applications sharing a machine, both related to
+        this subordinate application); they then share a single snap instance. This is
+        fine as long as every co-located unit applies the exact same configuration to
+        it; otherwise there is no way to satisfy all of them.
 
         Raises:
-            CharmConfigError: If a co-located unit of the same app is detected.
+            CharmConfigError: If a co-located unit of the same app is registered with
+                a different configuration.
         """
-        if self.conf.snap_name and self.singleton_manager.is_colocated_with_same_app(
-            self.conf.snap_name, self.app.name
-        ):
+        if not self.conf.snap_name:
+            return
+
+        conflict = self.singleton_manager.find_conflicting_colocated_unit(
+            self.conf.snap_name, self.app.name, self._snap_config_fingerprint()
+        )
+        if conflict:
+            conflicting_unit, reason = conflict
             raise CharmConfigError(
-                "Another unit of this application is co-located on this machine. "
-                "A single exporter-port config cannot serve multiple "
-                "principals on the same machine."
+                f"Another unit of this application ({conflicting_unit}) is co-located "
+                f"on this machine with a different configuration: {reason}. Units of "
+                "the same application sharing a machine must be configured identically."
             )
 
     def _check_status(self) -> None:
@@ -246,7 +291,9 @@ class GenericExporterOperatorCharm(ops.CharmBase):
                     "See juju debug-log for details."
                 )
             )
-        self.singleton_manager.update_registration(self.snap_client.name, self.conf.snap_revision)
+        self.singleton_manager.update_registration(
+            self.snap_client.name, self.conf.snap_revision, self._snap_config_fingerprint()
+        )
 
         keys_to_unset = self._get_snap_config_diff()
         if keys_to_unset:

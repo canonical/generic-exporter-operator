@@ -120,9 +120,12 @@ config:
         principal applications share a single generic-exporter application, since
         the automatic juju_application/juju_unit labelling otherwise only reflects
         this charm's own (shared) identity.
-        Two principal units co-located on the same machine remain unsupported
-        regardless of this setting: the second unit's snap will fail to bind
-        exporter-port and it will block.
+        Two principals of this application co-located on the same machine (e.g. two
+        different principal applications sharing a machine) share a single snap
+        instance, and are supported as long as every co-located unit is configured
+        identically (same exporter-port, snap-config, snap-plugs, snap-classic and
+        resolved snap revision): the charm blocks with a message naming the
+        conflicting unit and field otherwise.
 
 resources:
   alerts:
