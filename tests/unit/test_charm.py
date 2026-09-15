@@ -17,6 +17,7 @@ CHARM_NAME = "generic-exporter"
 STORED_STATE_NAME = "stored"
 DEFAULT_SNAP_INFO = SnapInfo(name="test-snap", revision=1, confinement=Confinement.STRICT)
 COS_AGENT_ENDPOINT_NAME = "cos-agent"
+PRINCIPAL_ENDPOINT_NAME = "juju-info"
 
 
 @pytest.fixture()
@@ -46,7 +47,7 @@ def mock_get_snap_info():
 def mock_singleton_snap_manager():
     """Mock the SingletonSnapManager class in charm.py."""
     mock_manager = MagicMock()
-    mock_manager.is_colocated_with_same_app.return_value = False
+    mock_manager.find_conflicting_colocated_unit.return_value = None
     with patch("charm.SingletonSnapManager", return_value=mock_manager):
         yield mock_manager
 
@@ -203,15 +204,18 @@ def test_snap_revision_not_found(mock_get_snap_info):
     )
 
 
-def test_blocked_when_colocated_units(
+def test_blocked_when_colocated_units_conflict(
     mock_snap_client,
     mock_singleton_snap_manager,
     mock_get_snap_info,
 ):
-    """Charm sets BlockedStatus when another unit of the same app is co-located on the machine."""
+    """Charm sets BlockedStatus when a co-located unit of the same app has a different config."""
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
-    mock_singleton_snap_manager.is_colocated_with_same_app.return_value = True
+    mock_singleton_snap_manager.find_conflicting_colocated_unit.return_value = (
+        "test-app_1",
+        "exporter_port (9091 vs 9090)",
+    )
 
     state_out = ctx.run(
         ctx.on.install(),
@@ -221,7 +225,32 @@ def test_blocked_when_colocated_units(
     )
 
     assert state_out.unit_status.name == "blocked"
-    assert "co-located" in state_out.unit_status.message
+    assert "test-app_1" in state_out.unit_status.message
+    assert "exporter_port (9091 vs 9090)" in state_out.unit_status.message
+
+
+def test_active_when_colocated_units_match(
+    mock_snap_client,
+    mock_singleton_snap_manager,
+    mock_get_snap_info,
+    mock_check_metrics_endpoint,
+):
+    """Co-located units of the same app with a matching config do not block each other."""
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.find_conflicting_colocated_unit.return_value = None
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    state_out = ctx.run(
+        ctx.on.install(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={"snap-name": "test-snap", "exporter-port": 9090, "snap-channel": "stable"},
+        ),
+    )
+
+    assert state_out.unit_status == testing.ActiveStatus()
 
 
 def test_snap_classic_not_allowed(mock_get_snap_info):
@@ -327,6 +356,45 @@ def test_on_install(
     else:
         mock_snap_client.install.assert_not_called()
     assert state_out.unit_status == testing.ActiveStatus()
+
+
+def test_on_install_registers_config_fingerprint(
+    mock_snap_client,
+    mock_check_metrics_endpoint,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
+):
+    """Install registers the singleton snap with a fingerprint of the applied config."""
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_snap_client.install.return_value = True
+    mock_snap_client.name = "test-snap"
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = []
+
+    ctx.run(
+        ctx.on.install(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "snap-plugs": "network,network-bind",
+            },
+        ),
+    )
+
+    mock_singleton_snap_manager.register.assert_called_once_with(
+        "test-snap",
+        1,
+        {
+            "snap_revision": 1,
+            "snap_classic": False,
+            "exporter_port": 10000,
+            "metrics_path": "metrics",
+            "snap_plugs": ["network", "network-bind"],
+            "snap_config": {},
+        },
+    )
 
 
 def test_on_install_snap_remove_failed(
@@ -739,6 +807,42 @@ def test_on_config_changed_updated_snap_config(
     mock_snap_client.set.assert_called_once_with({"key": "new-value"})
     mock_snap_client.enable_and_start.assert_called_once_with()
     assert state_out.unit_status == testing.ActiveStatus()
+
+
+def test_on_config_changed_updates_config_fingerprint(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Config-changed updates the singleton snap registration with the new fingerprint."""
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_snap_client.name = "test-snap"
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "snap-config": '{"key": "new-value"}',
+            },
+        ),
+    )
+
+    mock_singleton_snap_manager.update_registration.assert_called_once_with(
+        "test-snap",
+        1,
+        {
+            "snap_revision": 1,
+            "snap_classic": False,
+            "exporter_port": 10000,
+            "metrics_path": "metrics",
+            "snap_plugs": [],
+            "snap_config": {"key": "new-value"},
+        },
+    )
 
 
 def test_on_config_changed_snap_unset_failed(
@@ -1205,3 +1309,151 @@ def test_on_config_changed_snap_config_secret_not_found(
     # Assert
     mock_snap_client.set.assert_not_called()
     assert "does not exist" in state_out.unit_status.message
+
+
+def _cos_agent_scrape_jobs(state):
+    """Extract the metrics scrape jobs the charm published on the cos-agent relation."""
+    relation = next(r for r in state.relations if r.endpoint == COS_AGENT_ENDPOINT_NAME)
+    data = json.loads(relation.local_unit_data["config"])
+    return data["metrics_scrape_jobs"]
+
+
+def test_cos_relation_labels_include_principal_unit(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Scrape job labels identify the principal unit when label-principal-unit is enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[
+                testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="launchpad-admin",
+                    remote_unit_id=3,
+                ),
+            ],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "label-principal-unit": True,
+            },
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert labels["juju_principal_application"] == "launchpad-admin"
+    assert labels["juju_principal_unit"] == "launchpad-admin/3"
+    assert labels["juju_principal_unit_number"] == "3"
+
+
+def test_cos_relation_labels_principal_unit_disabled_by_default(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Principal-unit labels are omitted unless label-principal-unit is explicitly enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[
+                testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="launchpad-admin",
+                    remote_unit_id=3,
+                ),
+            ],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={"snap-name": "test-snap", "exporter-port": 10000},
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert set(labels) == {"instance"}
+
+
+def test_cos_relation_labels_without_principal_unit(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """Principal-unit labels are omitted when no juju-info relation exists, even if enabled."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "label-principal-unit": True,
+            },
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert set(labels) == {"instance"}
+
+
+def test_cos_relation_labels_omitted_when_multiple_principals_visible(
+    mock_snap_client, mock_check_metrics_endpoint, mock_get_snap_info, mock_singleton_snap_manager
+):
+    """No principal-unit labels are added when >1 juju-info relation has a visible unit.
+
+    This would mean two different principal applications are co-located on this
+    machine, which Juju's own relation-scope enforcement should prevent -- refuse to
+    guess rather than silently mislabel.
+    """
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            relations=[
+                testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="ubuntu",
+                    remote_unit_id=0,
+                ),
+                testing.SubordinateRelation(
+                    endpoint=PRINCIPAL_ENDPOINT_NAME,
+                    remote_app_name="mattermost",
+                    remote_unit_id=0,
+                ),
+            ],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config={
+                "snap-name": "test-snap",
+                "exporter-port": 10000,
+                "label-principal-unit": True,
+            },
+        ),
+    )
+
+    # Assert
+    labels = _cos_agent_scrape_jobs(state_out)[0]["static_configs"][0]["labels"]
+    assert set(labels) == {"instance"}

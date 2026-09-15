@@ -234,7 +234,7 @@ def test_config_change_exporter(juju: jubilant.Juju, app_name: str) -> None:
         {
             "snap-name": NODE_EXPORTER_SNAP_NAME,
             "exporter-port": NODE_EXPORTER_EXPORTER_PORT,
-            "snap-channel": "latest/beta",
+            "snap-channel": "latest/edge",
             "snap-plugs": "hardware-observe,mount-observe,network-observe,system-observe",
         },
     )

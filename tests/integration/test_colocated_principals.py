@@ -2,15 +2,20 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Integration tests for relating one generic-exporter app to multiple principals.
+"""Integration tests for two principal applications co-located on the same machine.
 
-Scenario: one generic-exporter app is related to two separate principal applications
-each deployed on their own machine. Each principal should receive its own subordinate
-unit and both should reach active/idle.
+Scenario: two different principal applications are placed on the *same* machine (e.g.
+via an explicit placement directive, or by coincidence of the model's placement
+policy), and both are related to the *same* generic-exporter application over
+juju-info. This produces two generic-exporter subordinate units sharing one machine,
+which in turn share a single installed snap instance.
 
-This validates that the charm works without a `limit: 1` constraint on the juju-info
-relation endpoint, and that with `label-principal-unit` enabled each subordinate unit's
-published scrape job is labelled with its own co-located principal, not the other one.
+This must not permanently block: every unit of a Juju application always receives the
+exact same application config, so co-located units of this application can only ever
+disagree transiently (e.g. mid-rollout of a config change before every unit's hook has
+fired) -- see test_charm.py::test_blocked_when_colocated_units_conflict and
+test_active_when_colocated_units_match for the corresponding unit-level coverage. Once
+settled, both units must reach active, and each must still report its own principal.
 """
 
 import json
@@ -34,10 +39,10 @@ from helpers import (
 logger = logging.getLogger(__name__)
 
 
-def test_deploy_multiple_principals(
+def test_deploy_colocated_principals(
     juju: jubilant.Juju, charm: str, app_name: str, base: str
 ) -> None:
-    """Deploy one generic-exporter app related to two different principal apps."""
+    """Deploy two principal apps onto the same machine, both related to one exporter."""
     juju.deploy(
         charm,
         app=app_name,
@@ -50,7 +55,16 @@ def test_deploy_multiple_principals(
     )
     juju.deploy(OTCOL_APP, channel=OTCOL_CHANNEL, base=base)
     juju.deploy(UBUNTU_APP_NAME, channel=UBUNTU_CHANNEL, base=base)
-    juju.deploy(app=UBUNTU_APP_NAME_2, charm="ubuntu", channel=UBUNTU_CHANNEL, base=base)
+
+    # Co-locate the second principal on the exact same machine as the first.
+    juju.wait(
+        lambda status: jubilant.all_agents_idle(status, UBUNTU_APP_NAME),
+        timeout=TIMEOUT,
+    )
+    machine = juju.status().get_units(UBUNTU_APP_NAME)[f"{UBUNTU_APP_NAME}/0"].machine
+    juju.deploy(
+        app=UBUNTU_APP_NAME_2, charm="ubuntu", channel=UBUNTU_CHANNEL, base=base, to=machine
+    )
 
     juju.integrate(f"{app_name}:{COS_ENDPOINT}", f"{OTCOL_APP}:{COS_ENDPOINT}")
     juju.integrate(f"{app_name}:{JUJU_INFO_ENDPOINT}", f"{UBUNTU_APP_NAME}:{JUJU_INFO_ENDPOINT}")
@@ -67,9 +81,8 @@ def test_deploy_multiple_principals(
         lambda status: (
             jubilant.all_active(status, app_name, UBUNTU_APP_NAME, UBUNTU_APP_NAME_2)
             # opentelemetry-collector has no configured telemetry destination in this
-            # scenario (no send-remote-write/grafana-dashboards/etc.), so it legitimately
-            # stays "blocked" forever; just wait for its agent to settle so its cos-agent
-            # relation data is populated.
+            # scenario, so it legitimately stays "blocked" forever; just wait for its
+            # agent to settle so its cos-agent relation data is populated.
             and jubilant.all_agents_idle(status, OTCOL_APP)
         ),
         error=jubilant.any_error,
@@ -77,30 +90,35 @@ def test_deploy_multiple_principals(
     )
 
 
+def test_principals_are_colocated(juju: jubilant.Juju) -> None:
+    """Sanity check that both principals actually landed on the same machine."""
+    status = juju.status()
+    ubuntu_units = status.get_units(UBUNTU_APP_NAME)
+    ubuntu_two_units = status.get_units(UBUNTU_APP_NAME_2)
+
+    machines = {unit.machine for unit in ubuntu_units.values()} | {
+        unit.machine for unit in ubuntu_two_units.values()
+    }
+    assert len(machines) == 1, f"Expected both principals on the same machine, got {machines}"
+
+
 def test_two_subordinate_units_created(juju: jubilant.Juju, app_name: str) -> None:
-    """Assert that one subordinate unit exists on each principal machine."""
+    """Assert that co-location produced one exporter unit per principal, neither blocked."""
     status = juju.status()
     exporter_units = status.get_units(app_name)
 
     assert len(exporter_units) == 2, (
-        f"Expected 2 generic-exporter subordinate units (one per principal), "
+        f"Expected 2 generic-exporter subordinate units (one per co-located principal), "
         f"got {len(exporter_units)}: {list(exporter_units.keys())}"
     )
-
-
-def test_each_subordinate_active(juju: jubilant.Juju, app_name: str) -> None:
-    """Assert that every subordinate unit is active/idle."""
-    status = juju.status()
-    exporter_units = status.get_units(app_name)
-
     for unit_name, unit in exporter_units.items():
         assert unit.workload_status.current == "active", (
             f"Unit {unit_name} is not active: {unit.workload_status}"
         )
 
 
-def test_labels_identify_each_principal_unit(juju: jubilant.Juju, app_name: str) -> None:
-    """Assert each subordinate's scrape job is labelled with its own principal, not the other."""
+def test_labels_identify_each_colocated_principal(juju: jubilant.Juju, app_name: str) -> None:
+    """Assert each co-located subordinate's scrape job is labelled with its own principal."""
     status = juju.status()
     exporter_units = status.get_units(app_name)
     otcol_units = status.get_units(OTCOL_APP)
@@ -145,13 +163,13 @@ def test_labels_identify_each_principal_unit(juju: jubilant.Juju, app_name: str)
         seen_principal_apps.add(principal_app)
 
     assert seen_principal_apps == {UBUNTU_APP_NAME, UBUNTU_APP_NAME_2}, (
-        f"Expected each subordinate to report a distinct principal, "
+        f"Expected each co-located subordinate to report a distinct principal, "
         f"covering both {{{UBUNTU_APP_NAME}, {UBUNTU_APP_NAME_2}}}, "
         f"got {seen_principal_apps}"
     )
 
 
-def test_remove_multiple_principals(juju: jubilant.Juju, app_name: str) -> None:
+def test_remove_colocated_principals(juju: jubilant.Juju, app_name: str) -> None:
     """Clean up all applications deployed in this module."""
     juju.remove_application(app_name)
     juju.remove_application(OTCOL_APP, destroy_storage=True)

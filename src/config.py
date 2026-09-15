@@ -24,6 +24,7 @@ class CharmConfig(BaseModel):
     metrics_path: str = "metrics"
     snap_plugs: Optional[List[str]] = None
     snap_config_secret: Optional[str] = None
+    label_principal_unit: bool = False
 
     def check_required_fields(self) -> Optional[List[str]]:
         """Ensure that required fields are present."""

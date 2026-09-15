@@ -110,6 +110,22 @@ config:
       description: |
         The path on which the metrics are exported. Without a leading slash.
         Default is "metrics".
+    label-principal-unit:
+      type: boolean
+      default: false
+      description: |
+        If set to true, add juju_principal_application, juju_principal_unit and
+        juju_principal_unit_number labels to the exported metrics, identifying the
+        principal unit this exporter's unit is co-located with. Useful when several
+        principal applications share a single generic-exporter application, since
+        the automatic juju_application/juju_unit labelling otherwise only reflects
+        this charm's own (shared) identity.
+        Two principals of this application co-located on the same machine (e.g. two
+        different principal applications sharing a machine) share a single snap
+        instance, and are supported as long as every co-located unit is configured
+        identically (same exporter-port, snap-config, snap-plugs, snap-classic and
+        resolved snap revision): the charm blocks with a message naming the
+        conflicting unit and field otherwise.
 
 resources:
   alerts:
