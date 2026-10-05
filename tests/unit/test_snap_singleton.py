@@ -194,44 +194,129 @@ def test_ignore_unexpected_files(lock_dir, caplog):
     )
 
 
-def test_is_colocated_with_same_app_true():
-    """Detect co-location when another unit of the same app is already registered."""
+def test_register_persists_config_fingerprint(lock_dir):
+    """Registering with a config fingerprint stores it, readable by other units."""
+    snap_name = "node-exporter"
+    fingerprint = {"exporter_port": 9100, "snap_config": {"a": 1}}
+    manager_0 = SingletonSnapManager("my-exporter/0")
+
+    manager_0.register(snap_name, 1, fingerprint)
+
+    [registration] = [
+        r for r in SingletonSnapManager._list_registration_files() if r.snap_name == snap_name
+    ]
+    assert registration.config_fingerprint == fingerprint
+
+
+def test_register_without_fingerprint_is_read_back_as_none(lock_dir):
+    """Registering without a fingerprint (legacy behaviour) reads back as None."""
+    snap_name = "node-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+
+    manager_0.register(snap_name, 1)
+
+    [registration] = [
+        r for r in SingletonSnapManager._list_registration_files() if r.snap_name == snap_name
+    ]
+    assert registration.config_fingerprint is None
+
+
+def test_update_registration_persists_config_fingerprint(lock_dir):
+    """Updating a registration with a new fingerprint replaces the stored one."""
+    snap_name = "node-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+
+    manager_0.register(snap_name, 1, {"exporter_port": 9100})
+    manager_0.update_registration(snap_name, 2, {"exporter_port": 9200})
+
+    [registration] = [
+        r for r in SingletonSnapManager._list_registration_files() if r.snap_name == snap_name
+    ]
+    assert registration.snap_revision == 2
+    assert registration.config_fingerprint == {"exporter_port": 9200}
+
+
+def test_find_conflicting_colocated_unit_none_when_matching():
+    """No conflict when a co-located unit of the same app has an identical fingerprint."""
+    snap_name = "node-exporter"
+    app_name = "my-exporter"
+    fingerprint = {"exporter_port": 9100, "snap_config": {"a": 1}}
+    manager_0 = SingletonSnapManager("my-exporter/0")
+    manager_1 = SingletonSnapManager("my-exporter/1")
+
+    manager_0.register(snap_name, 1, fingerprint)
+
+    assert manager_1.find_conflicting_colocated_unit(snap_name, app_name, fingerprint) is None
+
+
+def test_find_conflicting_colocated_unit_detects_diff():
+    """A co-located unit of the same app with a different fingerprint is reported."""
     snap_name = "node-exporter"
     app_name = "my-exporter"
     manager_0 = SingletonSnapManager("my-exporter/0")
     manager_1 = SingletonSnapManager("my-exporter/1")
 
-    manager_0.register(snap_name, 1)
+    manager_0.register(snap_name, 1, {"exporter_port": 9100})
 
-    assert manager_1.is_colocated_with_same_app(snap_name, app_name) is True
+    conflict = manager_1.find_conflicting_colocated_unit(
+        snap_name, app_name, {"exporter_port": 9200}
+    )
+
+    assert conflict is not None
+    conflicting_unit, reason = conflict
+    assert conflicting_unit == "my-exporter_0"  # the *other* unit is reported, not self
+    assert "exporter_port" in reason
+    assert "9100" in reason and "9200" in reason
 
 
-def test_is_colocated_with_same_app_false_no_registrations():
-    """No co-location when nothing is registered on the machine yet."""
+def test_find_conflicting_colocated_unit_none_when_no_registrations():
+    """No conflict when nothing is registered on the machine yet."""
     snap_name = "node-exporter"
     app_name = "my-exporter"
     manager_0 = SingletonSnapManager("my-exporter/0")
 
-    assert manager_0.is_colocated_with_same_app(snap_name, app_name) is False
+    assert manager_0.find_conflicting_colocated_unit(snap_name, app_name, {}) is None
 
 
-def test_is_colocated_with_same_app_false_only_self():
-    """No co-location when only the current unit is registered."""
+def test_find_conflicting_colocated_unit_none_when_only_self():
+    """No conflict when only the current unit is registered."""
     snap_name = "node-exporter"
     app_name = "my-exporter"
+    fingerprint = {"exporter_port": 9100}
     manager_0 = SingletonSnapManager("my-exporter/0")
 
-    manager_0.register(snap_name, 1)
+    manager_0.register(snap_name, 1, fingerprint)
 
-    assert manager_0.is_colocated_with_same_app(snap_name, app_name) is False
+    assert manager_0.find_conflicting_colocated_unit(snap_name, app_name, fingerprint) is None
 
 
-def test_is_colocated_with_same_app_false_different_app():
-    """Different-app units on the same machine are not flagged."""
+def test_find_conflicting_colocated_unit_none_for_different_app():
+    """Different-app units on the same machine are never flagged, even with different config."""
     snap_name = "node-exporter"
     manager_a = SingletonSnapManager("app-alpha/0")
     manager_b = SingletonSnapManager("app-beta/0")
 
-    manager_a.register(snap_name, 1)
+    manager_a.register(snap_name, 1, {"exporter_port": 9100})
 
-    assert manager_b.is_colocated_with_same_app(snap_name, "app-beta") is False
+    conflict = manager_b.find_conflicting_colocated_unit(
+        snap_name, "app-beta", {"exporter_port": 9200}
+    )
+    assert conflict is None
+
+
+def test_find_conflicting_colocated_unit_legacy_registration_without_fingerprint():
+    """A co-located same-app unit registered without a fingerprint is treated as a conflict."""
+    snap_name = "node-exporter"
+    app_name = "my-exporter"
+    manager_0 = SingletonSnapManager("my-exporter/0")
+    manager_1 = SingletonSnapManager("my-exporter/1")
+
+    manager_0.register(snap_name, 1)  # legacy: no fingerprint stored
+
+    conflict = manager_1.find_conflicting_colocated_unit(
+        snap_name, app_name, {"exporter_port": 9100}
+    )
+
+    assert conflict is not None
+    _, reason = conflict
+    assert "older charm revision" in reason
