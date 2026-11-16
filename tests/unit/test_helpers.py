@@ -11,10 +11,21 @@ from requests import RequestException
 from utils import (
     Confinement,
     SecretAccessError,
+    SnapNotFoundError,
+    SnapStoreUnavailableError,
     check_metrics_endpoint,
     decode_secret,
     get_snap_info,
 )
+
+
+@pytest.fixture()
+def mock_snap_client():
+    """Mock the snapd client used for store lookups, without sleeping between retries."""
+    client = MagicMock()
+    with patch("utils.snap.SnapClient", return_value=client):
+        with patch("tenacity.nap.time.sleep"):
+            yield client
 
 
 def test_check_metrics_endpoint_success():
@@ -103,17 +114,46 @@ def test_get_snap_info_no_revision():
         assert info.confinement == Confinement.CLASSIC
 
 
-def test_get_snap_info_api_error():
-    """Test retrieval of snap revision when SnapAPIError is raised."""
-    snap_name = "test-snap"
-    snap_channel = "latest/stable"
+def test_get_snap_info_retries_transient_error(mock_snap_client):
+    """Test that a transient store failure is retried instead of reported."""
+    mock_snap_client.get_snap_information.side_effect = [
+        snap.SnapAPIError({"message": "too many requests"}, 429, "Too Many Requests", ""),
+        {"confinement": "strict", "channels": {"latest/stable": {"revision": "7"}}},
+    ]
 
-    mock_snap_client = MagicMock()
-    mock_snap_client.get_snap_information.side_effect = snap.SnapAPIError({}, 404, "Err", "Err")
+    info = get_snap_info("test-snap", "latest/stable")
 
-    with patch("utils.snap.SnapClient", return_value=mock_snap_client):
-        info = get_snap_info(snap_name, snap_channel)
-        assert info is None
+    assert info.revision == 7
+    assert mock_snap_client.get_snap_information.call_count == 2
+
+
+def test_get_snap_info_store_unavailable(mock_snap_client):
+    """Test that a persistent store failure is reported with the details of the API error."""
+    mock_snap_client.get_snap_information.side_effect = snap.SnapAPIError(
+        {"message": "too many requests"}, 429, "Too Many Requests", ""
+    )
+
+    with pytest.raises(SnapStoreUnavailableError, match="code=429.*too many requests"):
+        get_snap_info("test-snap", "latest/stable")
+
+    assert mock_snap_client.get_snap_information.call_count == 3
+
+
+@pytest.mark.parametrize(
+    "side_effect",
+    [
+        snap.SnapAPIError({"kind": "snap-not-found"}, 404, "Not Found", ""),
+        IndexError("list index out of range"),
+    ],
+)
+def test_get_snap_info_not_found(side_effect, mock_snap_client):
+    """Test that a snap the store does not know is reported as not found, after retrying."""
+    mock_snap_client.get_snap_information.side_effect = side_effect
+
+    with pytest.raises(SnapNotFoundError):
+        get_snap_info("test-snap", "latest/stable")
+
+    assert mock_snap_client.get_snap_information.call_count == 3
 
 
 def test_get_snap_info_invalid_channels():

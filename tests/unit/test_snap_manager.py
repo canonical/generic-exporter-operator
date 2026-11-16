@@ -7,6 +7,7 @@ import pytest
 from charms.operator_libs_linux.v2 import snap
 
 from snap_manager import SnapClient
+from utils import Confinement, SnapInfo
 
 
 @pytest.fixture
@@ -60,6 +61,34 @@ def test_snap_version_not_installed(mock_snap_cache):
     version = client.snap_version
 
     assert version is None
+
+
+@pytest.mark.parametrize(
+    "revision,confinement,expected",
+    [
+        ("42", "strict", SnapInfo("test-snap", 42, Confinement.STRICT)),
+        ("42", "classic", SnapInfo("test-snap", 42, Confinement.CLASSIC)),
+        ("x1", "strict", SnapInfo("test-snap", None, Confinement.STRICT)),
+    ],
+)
+def test_installed_info(revision, confinement, expected, mock_snap_cache):
+    """Test that installed snap information is read from snapd without using the store."""
+    mock_snap = MagicMock()
+    mock_snap.present = True
+    mock_snap.revision = revision
+    mock_snap.confinement = confinement
+    mock_snap_cache.return_value.__getitem__.return_value = mock_snap
+
+    assert SnapClient("test-snap").installed_info() == expected
+
+
+def test_installed_info_not_installed(mock_snap_cache):
+    """Test that no information is returned for a snap that is not installed."""
+    mock_snap = MagicMock()
+    mock_snap.present = False
+    mock_snap_cache.return_value.__getitem__.return_value = mock_snap
+
+    assert SnapClient("test-snap").installed_info() is None
 
 
 def test_install_success(mock_snap_cache, mock_snap_add):

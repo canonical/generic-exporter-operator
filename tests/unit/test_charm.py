@@ -11,7 +11,7 @@ import pytest
 from ops import testing
 
 from charm import GenericExporterOperatorCharm
-from utils import Confinement, SnapInfo
+from utils import Confinement, SnapInfo, SnapNotFoundError, SnapStoreUnavailableError
 
 CHARM_NAME = "generic-exporter"
 STORED_STATE_NAME = "stored"
@@ -24,6 +24,7 @@ def mock_snap_client():
     """Mock the Velero class in charm.py."""
     mock_snap_client = MagicMock()
     mock_snap_client.snap_version = "1.0.0"
+    mock_snap_client.installed_info.return_value = None
     with patch("charm.SnapClient", return_value=mock_snap_client):
         yield mock_snap_client
 
@@ -114,49 +115,144 @@ def test_invalid_config(
 
 
 @pytest.mark.parametrize(
-    "config",
+    "config,expected_channel",
     [
-        {"snap-name": "test-snap", "exporter-port": 10000, "snap-channel": "stable"},
-        {"snap-name": "test-snap", "exporter-port": 10000, "snap-revision": 42},
+        ({"snap-name": "test-snap", "exporter-port": 10000, "snap-channel": "stable"}, "stable"),
+        ({"snap-name": "test-snap", "exporter-port": 10000, "snap-revision": 42}, None),
     ],
 )
 def test_snap_channel_revision_config(
+    config,
+    expected_channel,
+    mock_snap_client,
+    mock_check_metrics_endpoint,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
+):
+    """Check that charm resolves the snap revision from the store when installing."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.return_value = (
+        DEFAULT_SNAP_INFO
+        if expected_channel
+        else SnapInfo(name="test-snap", revision=None, confinement=Confinement.STRICT)
+    )
+    mock_singleton_snap_manager.get_snaps.return_value = []
+
+    # Act:
+    with ctx(ctx.on.install(), testing.State(config=config)) as mgr:
+        pass
+
+    # Assert
+    mock_get_snap_info.assert_called_once_with("test-snap", expected_channel)
+    expected_revision = DEFAULT_SNAP_INFO.revision if expected_channel else 42
+    assert mgr.charm.conf.snap_revision == expected_revision
+
+
+@pytest.mark.parametrize(
+    "event,config",
+    [
+        ("update_status", {"snap-name": "test-snap", "exporter-port": 10000}),
+        (
+            "update_status",
+            {"snap-name": "test-snap", "exporter-port": 10000, "snap-revision": 1},
+        ),
+        (
+            "config_changed",
+            {"snap-name": "test-snap", "exporter-port": 10000, "snap-revision": 1},
+        ),
+    ],
+)
+def test_installed_snap_does_not_need_the_store(
+    event,
     config,
     mock_snap_client,
     mock_check_metrics_endpoint,
     mock_get_snap_info,
     mock_singleton_snap_manager,
 ):
-    """Check that charm will try to resolve snap revision."""
+    """Check that an installed snap is managed without querying the snap store."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
-    mock_get_snap_info.return_value = (
-        DEFAULT_SNAP_INFO
-        if "snap-channel" in config
-        else SnapInfo(name="test-snap", revision=None, confinement=Confinement.STRICT)
+    mock_snap_client.installed_info.return_value = DEFAULT_SNAP_INFO
+    mock_get_snap_info.side_effect = SnapStoreUnavailableError("store down")
+    mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
+
+    # Act:
+    state_out = ctx.run(
+        getattr(ctx.on, event)(),
+        testing.State(
+            relations=[testing.SubordinateRelation(endpoint=COS_AGENT_ENDPOINT_NAME)],
+            resources=[testing.Resource(name="alerts", path="alerts.yaml")],
+            config=config,
+        ),
+    )
+
+    # Assert
+    mock_get_snap_info.assert_not_called()
+    assert state_out.unit_status == testing.ActiveStatus()
+
+
+def test_installed_classic_snap_checked_locally(
+    mock_snap_client,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
+):
+    """Check that the classic confinement check uses local data when the snap is installed."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_snap_client.installed_info.return_value = SnapInfo(
+        name="test-snap", revision=1, confinement=Confinement.CLASSIC
     )
     mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
     # Act:
-    with ctx(
+    state_out = ctx.run(
         ctx.on.update_status(),
-        testing.State(config=config),
-    ) as mgr:
-        pass
+        testing.State(config={"snap-name": "test-snap", "exporter-port": 10000}),
+    )
 
     # Assert
-    if "snap-channel" in config:
-        assert mgr.charm.conf.snap_revision == DEFAULT_SNAP_INFO.revision
-        mock_get_snap_info.assert_called_once_with("test-snap", config["snap-channel"])
-    else:
-        assert mgr.charm.conf.snap_revision == config["snap-revision"]
-        mock_get_snap_info.assert_called_once_with("test-snap", None)
+    mock_get_snap_info.assert_not_called()
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Snap test-snap requires classic confinement. Please enable 'snap-classic'."
+    )
 
 
-def test_snap_not_found(mock_get_snap_info):
+@pytest.mark.parametrize("event", ["install", "config_changed"])
+def test_store_unavailable_fails_the_hook(
+    event,
+    mock_snap_client,
+    mock_get_snap_info,
+    mock_singleton_snap_manager,
+):
+    """Check that the hook errors, so Juju retries it, when the store is needed but down."""
+    # Arrange:
+    ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_get_snap_info.side_effect = SnapStoreUnavailableError("store down")
+    mock_snap_client.installed_info.return_value = (
+        DEFAULT_SNAP_INFO if event == "config_changed" else None
+    )
+    mock_singleton_snap_manager.get_snaps.return_value = (
+        [("test-snap", 1)] if event == "config_changed" else []
+    )
+
+    # Act / Assert:
+    with pytest.raises(testing.errors.UncaughtCharmError, match="SnapStoreUnavailableError"):
+        ctx.run(
+            getattr(ctx.on, event)(),
+            testing.State(
+                config={"snap-name": "test-snap", "exporter-port": 10000, "snap-channel": "stable"}
+            ),
+        )
+
+    mock_get_snap_info.assert_called_once_with("test-snap", "stable")
+
+
+def test_snap_not_found(mock_snap_client, mock_get_snap_info, mock_singleton_snap_manager):
     """Check that charm sets BlockedStatus on install event when snap not found."""
     ctx = testing.Context(GenericExporterOperatorCharm)
-    mock_get_snap_info.return_value = None
+    mock_get_snap_info.side_effect = SnapNotFoundError("test-snap")
 
     # Act:
     state_out = ctx.run(
@@ -173,11 +269,13 @@ def test_snap_not_found(mock_get_snap_info):
     # Assert
     mock_get_snap_info.assert_called_once_with("test-snap", "stable")
     assert state_out.unit_status == testing.BlockedStatus(
-        ("Could not fetch info for snap test-snap. See juju debug-log for details.")
+        "Could not find snap test-snap in the snap store."
     )
 
 
-def test_snap_revision_not_found(mock_get_snap_info):
+def test_snap_revision_not_found(
+    mock_snap_client, mock_get_snap_info, mock_singleton_snap_manager
+):
     """Check that charm sets BlockedStatus on install event when snap revision not found."""
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_get_snap_info.return_value = SnapInfo(
@@ -224,7 +322,9 @@ def test_blocked_when_colocated_units(
     assert "co-located" in state_out.unit_status.message
 
 
-def test_snap_classic_not_allowed(mock_get_snap_info):
+def test_snap_classic_not_allowed(
+    mock_snap_client, mock_get_snap_info, mock_singleton_snap_manager
+):
     """Check that charm sets BlockedStatus on install when snap requires classic."""
     ctx = testing.Context(GenericExporterOperatorCharm)
     mock_get_snap_info.return_value = SnapInfo(
@@ -403,26 +503,27 @@ def test_on_install_snap_install_failed(
     """Test install event handling when snap installation fails."""
     # Arrange:
     ctx = testing.Context(GenericExporterOperatorCharm)
+    mock_snap_client.name = "test-snap"
     mock_snap_client.install.return_value = False
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     mock_singleton_snap_manager.get_snaps.return_value = []
 
-    # Act:
-    state_out = ctx.run(
-        ctx.on.install(),
-        testing.State(
-            config={
-                "snap-name": "test-snap",
-                "exporter-port": 10000,
-            },
-        ),
-    )
+    # Act / Assert:
+    with pytest.raises(testing.errors.UncaughtCharmError, match="Failed to install snap"):
+        ctx.run(
+            ctx.on.install(),
+            testing.State(
+                config={
+                    "snap-name": "test-snap",
+                    "exporter-port": 10000,
+                },
+            ),
+        )
 
-    # Assert
     mock_snap_client.install.assert_called_once()
-    assert state_out.unit_status == testing.BlockedStatus(
-        "Failed to install snap: test-snap. See juju debug-log for details."
-    )
+    # The registration is rolled back so that the retried hook installs the snap again
+    mock_singleton_snap_manager.register.assert_called_once_with("test-snap", 1)
+    mock_singleton_snap_manager.unregister.assert_called_once_with("test-snap", 1)
 
 
 @pytest.mark.parametrize(
@@ -620,26 +721,23 @@ def test_on_config_changed_snap_ensure_failed(
     mock_get_snap_info.return_value = DEFAULT_SNAP_INFO
     mock_singleton_snap_manager.get_snaps.return_value = [("test-snap", 1)]
 
-    # Act:
-    state_out = ctx.run(
-        ctx.on.config_changed(),
-        testing.State(
-            resources=[
-                testing.Resource(name="alerts", path="alerts.yaml"),
-            ],
-            config={
-                "snap-name": "test-snap",
-                "exporter-port": 10000,
-            },
-        ),
-    )
+    # Act / Assert:
+    with pytest.raises(testing.errors.UncaughtCharmError, match="Failed to configure snap"):
+        ctx.run(
+            ctx.on.config_changed(),
+            testing.State(
+                resources=[
+                    testing.Resource(name="alerts", path="alerts.yaml"),
+                ],
+                config={
+                    "snap-name": "test-snap",
+                    "exporter-port": 10000,
+                },
+            ),
+        )
 
-    # Assert
     mock_snap_client.ensure.assert_called_once()
     mock_snap_client.enable_and_start.assert_not_called()
-    assert state_out.unit_status == testing.BlockedStatus(
-        "Failed to configure snap: test-snap. See juju debug-log for details."
-    )
 
 
 def test_on_config_no_snap(
