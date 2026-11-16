@@ -19,6 +19,8 @@ from snap_manager import SnapClient
 from snap_singleton import SingletonSnapManager
 from utils import (
     Confinement,
+    SnapInfo,
+    SnapNotFoundError,
     check_metrics_endpoint,
     decode_secret_with_retry,
     flatten_dict,
@@ -53,6 +55,14 @@ class CharmStatusError(CharmError):
 
 class CharmUninstallError(CharmError):
     """Raised when charm uninstallation fails."""
+
+
+class CharmRetryError(Exception):
+    """Raised when an operation failed in a way that is worth retrying.
+
+    Deliberately not a CharmError: it propagates out of the event handler so the hook fails and
+    Juju retries it, rather than the unit going to a status that nothing would ever revisit.
+    """
 
 
 class GenericExporterOperatorCharm(ops.CharmBase):
@@ -114,6 +124,7 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         try:
             self._validate_config()
             self._check_colocated_units()
+            self._resolve_snap(event)
 
             if self.conf.snap_name not in self.get_installed_snap_names:
                 self._log_and_set_status(ops.MaintenanceStatus("Installing charm resources"))
@@ -166,7 +177,9 @@ class GenericExporterOperatorCharm(ops.CharmBase):
         self.singleton_manager.register(self.snap_client.name, self.conf.snap_revision)
 
         if not self.snap_client.install(self.conf.snap_revision, self.conf.snap_classic):
-            raise CharmInstallError(
+            # Otherwise the snap stays registered and the next event would skip the install.
+            self.singleton_manager.unregister(self.snap_client.name, self.conf.snap_revision)
+            raise CharmRetryError(
                 f"Failed to install snap: {self.conf.snap_name}. See juju debug-log for details."
             )
 
@@ -225,11 +238,8 @@ class GenericExporterOperatorCharm(ops.CharmBase):
 
         self.snap_client.disable_and_stop()
         if not self.snap_client.ensure(self.conf.snap_revision, self.conf.snap_classic):
-            raise CharmConfigError(
-                (
-                    f"Failed to configure snap: {self.conf.snap_name}. "
-                    "See juju debug-log for details."
-                )
+            raise CharmRetryError(
+                f"Failed to configure snap: {self.conf.snap_name}. See juju debug-log for details."
             )
         self.singleton_manager.update_registration(self.snap_client.name, self.conf.snap_revision)
 
@@ -423,30 +433,6 @@ class GenericExporterOperatorCharm(ops.CharmBase):
             messages = [err["msg"].removeprefix("Value error, ") for err in ve.errors()]
             raise CharmConfigError(f"Invalid configuration: {', '.join(messages)}")
 
-        if config.snap_name:
-            snap_info = get_snap_info(config.snap_name, config.snap_channel)
-            if snap_info is None:
-                raise CharmConfigError(
-                    f"Could not fetch info for snap {config.snap_name}. "
-                    "See juju debug-log for details."
-                )
-
-            config.snap_revision = snap_info.revision or config.snap_revision
-            if config.snap_channel is not None and config.snap_revision is None:
-                raise CharmConfigError(
-                    (
-                        f"Could not determine revision for snap {config.snap_name} "
-                        f"on channel {config.snap_channel}."
-                    )
-                )
-            if snap_info.confinement == Confinement.CLASSIC and not config.snap_classic:
-                raise CharmConfigError(
-                    (
-                        f"Snap {config.snap_name} requires classic confinement. "
-                        "Please enable 'snap-classic'."
-                    )
-                )
-
         if config.snap_config_secret:
             try:
                 secret_config = decode_secret_with_retry(self.model, config.snap_config_secret)
@@ -455,6 +441,75 @@ class GenericExporterOperatorCharm(ops.CharmBase):
                 raise CharmConfigError(str(e))
 
         self.conf = config
+
+    def _resolve_snap(self, event: ops.EventBase) -> None:
+        """Resolve the snap revision and confinement, using the snap store only when required.
+
+        The store is needed to install the snap, and to resolve a channel into a revision when
+        configuring. Every other event (e.g. update-status) relies on local snapd data, so a
+        store outage cannot affect a unit that has nothing to download.
+
+        Args:
+            event: The event being handled.
+
+        Raises:
+            CharmConfigError: If the snap does not exist, has no revision on the channel, or
+                needs classic confinement that is not enabled.
+            SnapStoreUnavailableError: If the store is needed but cannot be queried. This is not
+                a CharmError, so the hook fails and Juju retries it.
+        """
+        snap_client = self.snap_client
+        if snap_client is None:
+            return
+
+        will_install = self.conf.snap_name not in self.get_installed_snap_names
+        will_download = will_install or isinstance(event, ops.ConfigChangedEvent)
+
+        local_info = snap_client.installed_info()
+        need_revision = will_download and self.conf.snap_channel is not None
+        need_confinement = will_download and local_info is None
+
+        snap_info = local_info
+        if need_revision or need_confinement:
+            snap_info = self._lookup_snap_info(need_revision)
+        else:
+            logger.debug("Skipping snap store lookup for %s; not needed.", self.conf.snap_name)
+
+        if need_revision:
+            self.conf.snap_revision = snap_info.revision if snap_info else None
+            if self.conf.snap_revision is None:
+                raise CharmConfigError(
+                    f"Could not determine revision for snap {self.conf.snap_name} "
+                    f"on channel {self.conf.snap_channel}."
+                )
+
+        if (
+            snap_info is not None
+            and snap_info.confinement == Confinement.CLASSIC
+            and not self.conf.snap_classic
+        ):
+            raise CharmConfigError(
+                f"Snap {self.conf.snap_name} requires classic confinement. "
+                "Please enable 'snap-classic'."
+            )
+
+    def _lookup_snap_info(self, need_revision: bool) -> SnapInfo:
+        """Query the snap store for the configured snap.
+
+        Args:
+            need_revision: Whether to also resolve the configured channel into a revision.
+
+        Raises:
+            CharmConfigError: If the snap does not exist in the store.
+        """
+        assert self.conf.snap_name  # Callers have checked that a snap is configured
+        channel = self.conf.snap_channel if need_revision else None
+        try:
+            return get_snap_info(self.conf.snap_name, channel)
+        except SnapNotFoundError as err:
+            raise CharmConfigError(
+                f"Could not find snap {self.conf.snap_name} in the snap store."
+            ) from err
 
 
 if __name__ == "__main__":  # pragma: nocover

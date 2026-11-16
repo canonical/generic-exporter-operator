@@ -13,11 +13,14 @@ import requests
 from charms.operator_libs_linux.v2 import snap
 from ops.model import Model, ModelError, SecretNotFoundError
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception_type,
     retry_if_result,
     stop_after_attempt,
+    wait_exponential,
     wait_fixed,
+    wait_random,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,18 @@ class SnapInfo:
     name: str
     revision: Optional[int]
     confinement: Confinement
+
+
+class SnapStoreUnavailableError(Exception):
+    """The snap store could not be queried.
+
+    Deliberately not a charm status error: callers let it propagate so the hook fails and Juju
+    retries it, instead of the unit going to a status that nothing would ever revisit.
+    """
+
+
+class SnapNotFoundError(Exception):
+    """The snap store does not know the requested snap."""
 
 
 class SecretInvalidContentError(ValueError):
@@ -117,8 +132,59 @@ def merge_dicts(data_1: dict, data_2: dict, path: str = "") -> dict:
     return result
 
 
-def get_snap_info(snap_name: str, snap_channel: Optional[str] = None) -> Optional[SnapInfo]:
-    """Extract the revision from a snap channel string.
+# Failures of a single store lookup that are worth retrying. A "not found" is included because
+# the store has been observed to answer it intermittently for snaps that do exist.
+_RETRYABLE_LOOKUP_ERRORS = (
+    snap.SnapAPIError,
+    SnapNotFoundError,
+    OSError,
+    ValueError,
+    KeyError,
+)
+
+
+def _describe_lookup_error(err: BaseException) -> str:
+    """Render a lookup error, including the details snap.SnapAPIError keeps out of str()."""
+    if isinstance(err, snap.SnapAPIError):
+        return f"snapd API error: code={err.code} status={err.status!r} body={err.body!r}"
+    return f"{type(err).__name__}: {err}"
+
+
+def _log_lookup_retry(state: RetryCallState) -> None:
+    """Log a failed store lookup attempt that is about to be retried."""
+    err = state.outcome.exception() if state.outcome else None
+    logger.warning(
+        "Snap store lookup attempt %d failed (%s); retrying.",
+        state.attempt_number,
+        _describe_lookup_error(err) if err else "unknown error",
+    )
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, max=8) + wait_random(0, 1),
+    retry=retry_if_exception_type(_RETRYABLE_LOOKUP_ERRORS),
+    before_sleep=_log_lookup_retry,
+    reraise=True,
+)
+def _fetch_snap_information(snap_name: str) -> dict:
+    """Query the snap store (through snapd) once.
+
+    Raises:
+        SnapNotFoundError: If the store answers that the snap does not exist.
+    """
+    try:
+        return snap.SnapClient().get_snap_information(snap_name)
+    except snap.SnapAPIError as err:
+        if err.code == 404:
+            raise SnapNotFoundError(snap_name) from err
+        raise
+    except IndexError as err:  # snapd answered with an empty result list
+        raise SnapNotFoundError(snap_name) from err
+
+
+def get_snap_info(snap_name: str, snap_channel: Optional[str] = None) -> SnapInfo:
+    """Query the snap store for a snap, retrying transient failures.
 
     Args:
         snap_name: Name of the snap.
@@ -126,27 +192,30 @@ def get_snap_info(snap_name: str, snap_channel: Optional[str] = None) -> Optiona
             If provided, the revision for that channel will be fetched.
 
     Returns:
-        Optional[SnapInfo]: SnapInfo object if snap found, None otherwise.
-    """
-    client = snap.SnapClient()
+        SnapInfo: The snap information. Its revision is None if no channel was requested or the
+            channel has no revision.
 
+    Raises:
+        SnapNotFoundError: If the store reports that the snap does not exist.
+        SnapStoreUnavailableError: If the store could not be queried after all attempts.
+    """
     try:
-        response = client.get_snap_information(snap_name)
-        if snap_channel:
-            return SnapInfo(
-                name=snap_name,
-                revision=_get_revision_from_response(response, snap_channel),
-                confinement=Confinement(response.get("confinement", "strict")),
-            )
-        else:
-            return SnapInfo(
-                name=snap_name,
-                revision=None,
-                confinement=Confinement(response.get("confinement", "strict")),
-            )
-    except snap.SnapAPIError as err:
-        logger.error("Failed to get snap information for %s: %s", snap_name, err)
-        return None
+        response = _fetch_snap_information(snap_name)
+    except SnapNotFoundError:
+        logger.error("Snap %s was not found in the snap store.", snap_name)
+        raise
+    except _RETRYABLE_LOOKUP_ERRORS as err:
+        details = _describe_lookup_error(err)
+        logger.error("Failed to get snap information for %s: %s", snap_name, details)
+        raise SnapStoreUnavailableError(
+            f"Could not fetch info for snap {snap_name}: {details}"
+        ) from err
+
+    return SnapInfo(
+        name=snap_name,
+        revision=_get_revision_from_response(response, snap_channel) if snap_channel else None,
+        confinement=Confinement(response.get("confinement", "strict")),
+    )
 
 
 def _get_revision_from_response(response: dict, snap_channel: str) -> Optional[int]:

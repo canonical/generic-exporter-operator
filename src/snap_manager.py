@@ -10,6 +10,7 @@ from charms.operator_libs_linux.v2 import snap
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_fixed
 
 from ssdlc import SSDLCSysEvent, log_ssdlc_system_event
+from utils import Confinement, SnapInfo
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,25 @@ class SnapClient:
         if client.present:
             return client.version
         return None
+
+    def installed_info(self) -> Optional[SnapInfo]:
+        """Return what snapd knows locally about the installed snap, without using the network.
+
+        Returns:
+            The installed revision and confinement, or None if the snap is not installed. The
+            revision is None for snaps whose revision is not numeric (e.g. locally sideloaded).
+        """
+        client = self.snap_client
+        if not client.present:
+            return None
+        revision = str(client.revision)
+        return SnapInfo(
+            name=self.name,
+            revision=int(revision) if revision.isdigit() else None,
+            confinement=(
+                Confinement.CLASSIC if client.confinement == "classic" else Confinement.STRICT
+            ),
+        )
 
     def install(self, revision: Union[str, int], classic: bool = False) -> bool:
         """Install the snap exporter."""

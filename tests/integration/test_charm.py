@@ -174,10 +174,6 @@ def test_config_snap_config(juju: jubilant.Juju, app_name: str) -> None:
             "Could not determine revision for snap smartctl-exporter on channel invalid/channel.",
         ),
         (
-            {"snap-revision": 999999},
-            "Failed to configure snap: smartctl-exporter. See juju debug-log for details.",
-        ),
-        (
             {"snap-channel": "latest/stable", "snap-revision": 76},
             "Invalid configuration: snap-channel and snap-revision cannot both be set",
         ),
@@ -223,7 +219,7 @@ def test_config_invalid_snap(juju: jubilant.Juju, app_name: str) -> None:
 
     current_status_message = juju.status().apps[app_name].app_status.message
     assert current_status_message == (
-        "Could not fetch info for snap non-existent-snap. See juju debug-log for details."
+        "Could not find snap non-existent-snap in the snap store."
     ), f"Expected blocked message for non-existent snap, found '{current_status_message}'"
 
 
