@@ -13,7 +13,6 @@ from utils import (
     SecretAccessError,
     SnapNotFoundError,
     SnapStoreUnavailableError,
-    _fetch_snap_information,
     check_metrics_endpoint,
     decode_secret,
     get_snap_info,
@@ -25,7 +24,7 @@ def mock_snap_client():
     """Mock the snapd client used for store lookups, without sleeping between retries."""
     client = MagicMock()
     with patch("utils.snap.SnapClient", return_value=client):
-        with patch.object(_fetch_snap_information.retry, "sleep"):
+        with patch("tenacity.nap.time.sleep"):
             yield client
 
 
